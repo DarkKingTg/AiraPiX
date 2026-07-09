@@ -1,0 +1,80 @@
+model:
+  # Safe first GPU profile for a 4 GB RTX 2050 with desktop memory overhead.
+  # Keep 1024 tokens as requested, but use the tiny architecture until the VRAM
+  # probe proves a larger preset fits.
+  preset: tiny
+  vocab_size: 12000
+  context_len: 1024
+  dropout: 0.0
+  gradient_checkpointing: true
+
+data:
+  tokenizer_path: airapix/model/tokenizer/tokenizer.json
+  train_path: dataset_builder/data/processed/train.jsonl
+  val_path: dataset_builder/data/processed/val.jsonl
+  category_shards:
+    text: dataset_builder/data/processed/train_text.jsonl
+    chat: dataset_builder/data/processed/train_chat.jsonl
+    reasoning: dataset_builder/data/processed/train_reasoning.jsonl
+    code: dataset_builder/data/processed/train_code.jsonl
+    tool_use: dataset_builder/data/processed/train_tool_use.jsonl
+  mixture_weights:
+    text: 0.22
+    chat: 0.20
+    reasoning: 0.24
+    code: 0.16
+    tool_use: 0.18
+  use_compression_prior: true
+  manifest_path: dataset_builder/data/manifests/dataset_manifest.json
+  num_workers: 0
+
+training:
+  output_dir: runs/rtx2050_tiny
+  seed: 42
+  max_steps: 2000
+  micro_batch_size: 1
+  target_effective_batch_size: 16
+  eval_interval: 100
+  eval_batches: 10
+  checkpoint_interval: 100
+  early_stopping_patience: 5
+  log_interval: 10
+  precision: auto
+  grad_clip_norm: 1.0
+
+optimizer:
+  name: muon_adamw
+  peak_lr: 0.0004
+  min_lr_ratio: 0.1
+  warmup_fraction: 0.02
+  weight_decay: 0.05
+  adamw_betas: [0.9, 0.95]
+  adamw_eps: 0.00000001
+  muon_momentum: 0.95
+  muon_ns_steps: 5
+  muon_lr_multiplier: 1.0
+  adamw_lr_multiplier: 1.0
+
+probe:
+  presets: [tiny]
+  micro_batch_sizes: [1, 2, 4]
+  memory_limit_gb: 3.5
+  steps: 2
+
+distillation:
+  teacher_model: Qwen/Qwen2.5-7B-Instruct
+  enabled: false
+  max_new_tokens: 512
+  temperature: 0.7
+  top_p: 0.9
+  load_in_4bit: true
+  device_map: auto
+
+regmix:
+  enabled: true
+  proxy_output_dir: runs/regmix_proxy_rtx2050
+  proxy_model_preset: tiny
+  proxy_steps: 1000
+  candidate_mixtures: 16
+  ridge_alpha: 0.1
+  categories: [text, chat, reasoning, code, tool_use]

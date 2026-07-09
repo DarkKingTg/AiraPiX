@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+dataset_builder/data/raw/
+dataset_builder/data/interim/
+dataset_builder/data/processed/
+dataset_builder/data/manifests/
+
+runs/
+*.pt
+*.pth
+*.safetensors
+
+airapix/model/tokenizer/tokenizer.json

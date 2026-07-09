@@ -1,0 +1,101 @@
+pipeline:
+  seed: 42
+  target_context_tokens: 1024
+  raw_dir: data/raw
+  interim_dir: data/interim
+  processed_dir: data/processed
+  manifest_dir: data/manifests
+  train_fraction: 0.98
+  output_category_shards: true
+  min_chars: 60
+  max_chars: 12000
+  langdetect_enabled: false
+  langdetect_min_confidence: 0.85
+  dedup:
+    method: exact
+    threshold: 0.86
+    num_perm: 64
+    shingle_size: 5
+  compression_ratio:
+    enabled: true
+    min: 0.12
+    max: 0.98
+    preferred_min: 0.25
+    preferred_max: 0.85
+
+datasets:
+  - name: wikitext_103
+    enabled: true
+    hf_name: Salesforce/wikitext
+    hf_config: wikitext-103-raw-v1
+    split: train
+    streaming: true
+    sample_limit: 10000
+    category: text
+    format: plain_text
+    fields:
+      output: text
+
+  - name: databricks_dolly_15k
+    enabled: true
+    hf_name: databricks/databricks-dolly-15k
+    split: train
+    streaming: true
+    sample_limit: 15000
+    category: chat
+    format: instruction_response
+    fields:
+      instruction: instruction
+      context: context
+      output: response
+
+  - name: openorca_sample
+    enabled: true
+    hf_name: Open-Orca/OpenOrca
+    split: train
+    streaming: true
+    sample_limit: 10000
+    category: reasoning
+    format: openorca
+    fields:
+      system: system_prompt
+      input: question
+      output: response
+
+  - name: gsm8k
+    enabled: true
+    hf_name: openai/gsm8k
+    hf_config: main
+    split: train
+    streaming: true
+    sample_limit: 7500
+    category: reasoning
+    format: qa
+    fields:
+      input: question
+      output: answer
+
+  - name: codealpaca_20k
+    enabled: true
+    hf_name: sahil2801/CodeAlpaca-20k
+    split: train
+    streaming: true
+    sample_limit: 10000
+    category: code
+    format: instruction_response
+    fields:
+      instruction: instruction
+      context: input
+      output: output
+
+  - name: glaive_function_calling_v2
+    enabled: true
+    hf_name: glaiveai/glaive-function-calling-v2
+    split: train
+    streaming: true
+    sample_limit: 10000
+    category: tool_use
+    format: auto_text
+    fields:
+      input: system
+      output: chat
