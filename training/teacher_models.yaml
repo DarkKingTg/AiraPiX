@@ -1,0 +1,30 @@
+cache_dir: models/teachers/hf_cache
+local_dir:
+models:
+  - name: qwen25_7b_instruct
+    enabled: true
+    repo_id: Qwen/Qwen2.5-7B-Instruct
+    role: primary_sequence_teacher
+    notes: Main Aira teacher for chat, reasoning, tool-use, and general instruction distillation.
+    expected_size_gb: 14.2
+
+  - name: qwen25_1p5b_instruct
+    enabled: true
+    repo_id: Qwen/Qwen2.5-1.5B-Instruct
+    role: lightweight_fallback_teacher
+    notes: Smaller teacher for quick Colab/free-tier checks or low-memory fallback generation.
+    expected_size_gb: 2.89
+
+  - name: qwen25_coder_1p5b_instruct
+    enabled: true
+    repo_id: Qwen/Qwen2.5-Coder-1.5B-Instruct
+    role: code_teacher
+    notes: Smaller specialist teacher for code prompt distillation.
+    expected_size_gb: 2.89
+
+  - name: qwen25_math_1p5b_instruct
+    enabled: true
+    repo_id: Qwen/Qwen2.5-Math-1.5B-Instruct
+    role: math_reasoning_teacher
+    notes: Smaller specialist teacher for math/reasoning prompt distillation.
+    expected_size_gb: 2.89

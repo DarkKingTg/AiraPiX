@@ -209,6 +209,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--processed-dir", default="dataset_builder/data/processed")
     parser.add_argument("--teacher-dir", default="dataset_builder/data/processed_teacher")
     parser.add_argument("--tokenizer-vocab-size", type=int, default=12000)
+    parser.add_argument("--download-teachers", action="store_true", help="Download teacher sub-models before distillation/training.")
+    parser.add_argument("--teacher-models-manifest", default="training/teacher_models.yaml")
+    parser.add_argument("--teacher-download-mode", choices=["metadata", "tokenizer", "full"], default="full")
+    parser.add_argument("--teacher-model-names", nargs="+", default=["all"])
+    parser.add_argument("--teacher-cache-dir", default="models/teachers/hf_cache")
+    parser.add_argument("--teacher-max-workers", type=int, default=8)
     parser.add_argument("--distill", action="store_true", help="Generate Qwen2.5-7B teacher examples before training.")
     parser.add_argument("--distill-inputs", nargs="+", default=["train_chat.jsonl", "train_reasoning.jsonl", "train_tool_use.jsonl"])
     parser.add_argument("--distill-limit", type=int, default=None, help="Per-input limit. Omit for all rows.")
@@ -264,6 +270,26 @@ def main() -> None:
             env=env,
         )
 
+    if args.download_teachers:
+        run(
+            [
+                sys.executable,
+                "-m",
+                "airapix.training.download_teacher_models",
+                "--manifest",
+                args.teacher_models_manifest,
+                "--mode",
+                args.teacher_download_mode,
+                "--cache-dir",
+                args.teacher_cache_dir,
+                "--max-workers",
+                str(args.teacher_max_workers),
+                "--names",
+                *args.teacher_model_names,
+            ],
+            env=env,
+        )
+
     if args.distill:
         teacher_parts: list[Path] = []
         teacher_raw_dir = ROOT / "dataset_builder/data/teacher"
@@ -283,6 +309,8 @@ def main() -> None:
                 str(output_path),
                 "--log-every",
                 str(args.distill_log_every),
+                "--cache-dir",
+                args.teacher_cache_dir,
             ]
             if args.distill_limit is not None:
                 cmd.extend(["--limit", str(args.distill_limit)])

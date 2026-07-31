@@ -82,6 +82,19 @@ runs/rtx2050_125m_smoke/checkpoints/final.pt
 The distillation script and dependencies are installed, but Qwen2.5-7B should
 normally be run on Colab or a larger machine. The RTX 2050 has only 4 GB VRAM.
 
+Teacher sub-model manifest:
+
+```text
+training/teacher_models.yaml
+```
+
+Download/check teacher models:
+
+```powershell
+.\.venv\Scripts\python.exe -m airapix.training.download_teacher_models --manifest training\teacher_models.yaml --mode metadata
+.\.venv\Scripts\python.exe -m airapix.training.download_teacher_models --manifest training\teacher_models.yaml --mode full
+```
+
 Script:
 
 ```powershell

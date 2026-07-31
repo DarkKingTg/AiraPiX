@@ -94,7 +94,13 @@ python colab/run_colab_training.py --max-steps 1000 --log-every 5
 To generate Qwen2.5-7B teacher data first:
 
 ```bash
-python colab/run_colab_training.py --distill --distill-limit 1000 --max-steps 1000 --log-every 5
+python colab/run_colab_training.py --download-teachers --distill --distill-limit 1000 --max-steps 1000 --log-every 5
+```
+
+To only download/check Aira's teacher sub-models:
+
+```bash
+python colab/run_colab_training.py --download-teachers --skip-dataset --skip-tokenizer --skip-probe --skip-train
 ```
 
 See `colab/README.md` for options. The Colab runner prints runtime details,

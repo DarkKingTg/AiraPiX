@@ -9,6 +9,7 @@ dataset_builder/data/processed/
 dataset_builder/data/manifests/
 
 runs/
+models/teachers/
 *.pt
 *.pth
 *.safetensors

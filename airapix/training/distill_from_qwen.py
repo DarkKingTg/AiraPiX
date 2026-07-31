@@ -27,6 +27,8 @@ def main() -> None:
     parser.add_argument("--output", required=True)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--log-every", type=int, default=10)
+    parser.add_argument("--teacher-model", default=None, help="Override config distillation.teacher_model.")
+    parser.add_argument("--cache-dir", default=None, help="Hugging Face cache dir containing downloaded teacher models.")
     args = parser.parse_args()
 
     try:
@@ -36,14 +38,15 @@ def main() -> None:
 
     config = load_training_config(args.config)
     distill_cfg = config["distillation"]
-    model_name = distill_cfg.get("teacher_model", "Qwen/Qwen2.5-7B-Instruct")
+    model_name = args.teacher_model or distill_cfg.get("teacher_model", "Qwen/Qwen2.5-7B-Instruct")
     print(f"[distill] loading teacher: {model_name}", flush=True)
-    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True, cache_dir=args.cache_dir)
     compute_dtype = torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16
     model_kwargs = {
         "torch_dtype": compute_dtype,
         "device_map": distill_cfg.get("device_map", "auto"),
         "trust_remote_code": True,
+        "cache_dir": args.cache_dir,
     }
     if bool(distill_cfg.get("load_in_4bit", True)):
         try:

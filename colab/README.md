@@ -12,10 +12,22 @@ For a quick test:
 python colab/run_colab_training.py --max-steps 5 --log-every 1
 ```
 
+To download Aira's teacher sub-model bundle without training yet:
+
+```bash
+python colab/run_colab_training.py --download-teachers --skip-dataset --skip-tokenizer --skip-probe --skip-train
+```
+
+For a metadata-only check before spending bandwidth:
+
+```bash
+python colab/run_colab_training.py --download-teachers --teacher-download-mode metadata --skip-dataset --skip-tokenizer --skip-probe --skip-train
+```
+
 To also generate Qwen2.5-7B teacher data:
 
 ```bash
-python colab/run_colab_training.py --distill --distill-limit 1000 --max-steps 1000 --log-every 5
+python colab/run_colab_training.py --download-teachers --distill --distill-limit 1000 --max-steps 1000 --log-every 5
 ```
 
 Remove `--distill-limit 1000` to generate teacher data for all selected rows.
@@ -31,6 +43,9 @@ Useful options:
 - `--skip-train`: only build/download data and tokenizer.
 - `--distill-inputs train_chat.jsonl train_reasoning.jsonl train_tool_use.jsonl`:
   choose which shards to feed to Qwen.
+- `--teacher-model-names qwen25_7b_instruct`: download only selected teacher
+  models from `training/teacher_models.yaml`.
+- `--teacher-download-mode tokenizer`: download only tokenizer/config files.
 - `--hf-token <token>`: pass a Hugging Face token for higher rate limits or
   gated models.
 
