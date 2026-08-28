@@ -364,8 +364,12 @@ def main() -> None:
         args.checkpoint_interval,
     )
 
-    if not args.skip_probe:
-        run([sys.executable, "-m", "airapix.training.probe_vram", "--config", str(colab_config)], env=env)
+    should_probe = not args.skip_probe and not args.load_in_4bit and args.preset not in {"8b", "7b", "3b"}
+    if should_probe:
+        print("[colab] running VRAM probe...", flush=True)
+        run([sys.executable, "-m", "airapix.training.probe_vram", "--config", str(colab_config)], check=False, env=env)
+    else:
+        print("[colab] skipping VRAM probe for large/4-bit model training", flush=True)
 
     if not args.skip_train:
         train_cmd = [
