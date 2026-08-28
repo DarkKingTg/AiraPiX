@@ -36,20 +36,26 @@ def in_colab() -> bool:
 
 
 def maybe_mount_drive(enabled: bool, drive_project_dir: str | None) -> Path | None:
-    if not enabled:
-        return None
-    if not in_colab():
-        print("[colab] --mount-drive requested, but this is not a Colab runtime.", flush=True)
-        return None
-    from google.colab import drive  # type: ignore
+    drive_mounted = Path("/content/drive/MyDrive").exists()
+    if not drive_mounted and enabled and in_colab():
+        try:
+            from google.colab import drive  # type: ignore
 
-    drive.mount("/content/drive")
-    if not drive_project_dir:
-        return None
-    target = Path(drive_project_dir)
-    target.mkdir(parents=True, exist_ok=True)
-    print(f"[colab] Drive project directory: {target}", flush=True)
-    return target
+            drive.mount("/content/drive")
+            drive_mounted = Path("/content/drive/MyDrive").exists()
+        except Exception as err:
+            print(
+                f"[colab] Notice: Could not trigger drive.mount inside script process ({err}). "
+                "If you want to save checkpoints to Google Drive, run `from google.colab import drive; drive.mount('/content/drive')` in a Colab cell first.",
+                flush=True,
+            )
+
+    if drive_mounted and drive_project_dir:
+        target = Path(drive_project_dir)
+        target.mkdir(parents=True, exist_ok=True)
+        print(f"[colab] Drive project directory: {target}", flush=True)
+        return target
+    return None
 
 
 def install_dependencies(skip: bool) -> None:
