@@ -55,3 +55,9 @@ optimizer:
   muon_ns_steps: 5
   muon_lr_multiplier: 1.0
   adamw_lr_multiplier: 1.0
+
+probe:
+  presets: [3b, 1.5b, 125m]
+  micro_batch_sizes: [1, 2]
+  memory_limit_gb: 3.5
+  steps: 3

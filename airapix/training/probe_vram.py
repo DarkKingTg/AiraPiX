@@ -73,7 +73,11 @@ def main() -> None:
     args = parser.parse_args()
 
     config = load_training_config(args.config)
-    probe_cfg = config["probe"]
+    probe_cfg = config.get("probe")
+    if not probe_cfg:
+        print("[probe] No 'probe' section in config. Skipping VRAM probe.", flush=True)
+        return
+
     train_cfg = {**config["training"], "probe_steps": probe_cfg.get("steps", 3)}
     opt_cfg = config["optimizer"]
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
