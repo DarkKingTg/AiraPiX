@@ -149,7 +149,7 @@ datasets:
 
   - name: hermes_function_calling
     enabled: true
-    hf_name: nlaing/Hermes-Function-Calling-V1
+    hf_name: NousResearch/hermes-function-calling-v1
     split: train
     streaming: true
     sample_limit: 10000

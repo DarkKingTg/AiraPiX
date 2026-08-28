@@ -76,7 +76,11 @@ def main() -> None:
     manifest = {"stage": "download", "datasets": []}
     for spec in enabled_datasets(config):
         print(f"[download] {spec['name']} from {spec['hf_name']}")
-        manifest["datasets"].append(download_one(spec, raw_dir))
+        try:
+            res = download_one(spec, raw_dir)
+            manifest["datasets"].append(res)
+        except Exception as err:
+            print(f"[download] WARNING: Skipping dataset '{spec['name']}' due to error: {err}", flush=True)
 
     (manifest_dir / "01_download_manifest.json").write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False),
