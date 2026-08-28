@@ -1,126 +1,165 @@
-# AiraPix Phase 1-3 Bootstrap
+# AiraPiX 🚀
 
-AiraPix is a small, local-first AI companion project. This repository now starts
-the first three phases:
+> **AiraAI**: A High-Efficiency, Scalable Hybrid Language Model Architecture (1.5B – 8B parameters) designed for high performance on Frontier Cloud GPUs and low-resource Edge Deployment (4GB VRAM / 2GB RAM).
 
-- Phase 1: dataset builder for open Hugging Face datasets.
-- Phase 2: raw PyTorch small language model with MLA-style attention and a
-  pure-PyTorch SSM fallback block.
-- Phase 3: pretraining loop with VRAM probing, RegMix-inspired data mixing,
-  compression-ratio scoring, Qwen2.5-7B sequence distillation, and a
-  Muon-plus-AdamW hybrid optimizer.
+---
 
-The defaults are conservative for a 4 GB VRAM target:
+## 🌟 Key Highlights
 
-- Context length: `1024`
-- Vocab size: `12000`
-- Attention: MLA-style compressed KV attention on every fourth layer
-- Other layers: pure-PyTorch diagonal SSM mixer
-- Distillation: offline sequence-level generation from
-  `Qwen/Qwen2.5-7B-Instruct`
-- Optimizer: Muon for 2D hidden-layer matrices, AdamW for embeddings, norms,
-  biases, and output heads
+- **Multi-Scale Model Presets**: Support for `1.5B`, `3B`, `7B`, and **`8B`** parameter models (`d_model=4096`, `n_layers=32`, `n_heads=32`).
+- **Hybrid MLA + Diagonal SSM Architecture**:
+  - **MLA (Multi-Head Latent Attention)**: Compressed Key-Value latent projections with decoupled Rotary Position Embeddings (RoPE) every 4th layer.
+  - **Diagonal SSM**: Linear-complexity state-space mixer for long-context sequence modeling on intermediate layers.
+- **CPU-to-CUDA 4-Bit Block Streaming**: Zero-spike 4-bit NF4 quantization (`--load-in-4bit --use-qlora`) streams layer blocks from CPU RAM to CUDA GPU, allowing an **8B parameter model to train on a single 15GB Tesla T4 GPU** (peak initialization VRAM < 4.0 GB).
+- **Gold-Standard Pure Dataset Pipeline**: Built-in automated ingestion, deduplication, and quality filtering for:
+  - **FineWeb-Edu**: High-quality educational text & reasoning
+  - **UltraChat 200k**: Multi-turn dialogue synthesis
+  - **Orca Math 200k**: Chain-of-Thought mathematical reasoning
+  - **CodeFeedback & CodeAlpaca**: Multi-language programming & code instructions
+  - **Hermes & Glaive Function Calling**: Structured JSON tool use and agentic workflows
+- **Frontier Model Distillation**: Distill reasoning capabilities from frontier teacher models (`Qwen2.5-72B-Instruct`, `DeepSeek-R1-Distill-Qwen-32B`, `Llama-3.3-70B-Instruct`).
+- **Muon + AdamW Hybrid Optimizer**: Muon optimizer for 2D weight matrices combined with AdamW for 1D vectors, embeddings, and normalization layers.
+- **Edge Quantization Exporter**: Export trained 4-bit checkpoints for edge execution (`scripts/export_quantized.py`).
 
-## Setup
+---
 
-PowerShell:
+## 🛠️ Installation & Setup
 
-```powershell
-py -3.11 -m venv .venv
+### Local Setup (Windows / Linux)
+
+```bash
+# Create virtual environment
+python -m venv .venv
+
+# Activate environment (Windows PowerShell)
 .\.venv\Scripts\Activate.ps1
+
+# Activate environment (Linux / macOS)
+source .venv/bin/activate
+
+# Upgrade pip & install dependencies
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
 
-If `py` is not installed, install Python 3.11 or 3.12 from python.org and make
-sure it is added to PATH.
+---
 
-## Smoke Test
+## ⚡ Quick Start: Google Colab Training (8B Model on T4 GPU)
 
-```powershell
-python scripts\smoke_test.py
+Train an **8B parameter model** using QLoRA in Google Colab (Tesla T4 15GB VRAM):
+
+```bash
+# 1. Clone repository & navigate to directory
+!git clone https://github.com/DarkKingTg/AiraPiX.git
+%cd AiraPiX
+!git checkout codex/aira-training-setup
+
+# 2. Run automated Colab training pipeline
+!python colab/run_colab_training.py \
+  --preset 8b \
+  --load-in-4bit \
+  --use-qlora \
+  --base-training-config training/config.colab_8b_qlora.yaml \
+  --micro-batch-size 2 \
+  --effective-batch-size 32 \
+  --skip-probe \
+  --mount-drive
 ```
 
-This only builds a tiny model and checks a forward/backward/optimizer step. It
-does not download datasets.
+---
 
-## Phase 1 Dataset Builder
+## 📊 Dataset Pipeline
 
-Edit `dataset_builder/config.yaml`, then run:
+Run the end-to-end dataset builder (download, normalize, clean, filter, MinHash dedup, split):
 
-```powershell
-python dataset_builder\run_all.py --config dataset_builder\config.yaml
+```bash
+python dataset_builder/run_all.py --config dataset_builder/config.trainable_v0.yaml
 ```
 
-The final training files are written under:
-
+The processed data will be saved under:
 ```text
 dataset_builder/data/processed/
+├── train.jsonl
+├── val.jsonl
+├── train_text.jsonl
+├── train_chat.jsonl
+├── train_reasoning.jsonl
+├── train_code.jsonl
+└── train_tool_use.jsonl
 ```
 
-## Phase 2 Tokenizer
+---
 
-After Phase 1 has produced `train.jsonl`:
+## 🔤 Tokenizer Training
 
-```powershell
-python -m airapix.model.tokenizer.train_tokenizer `
-  --input dataset_builder\data\processed\train.jsonl `
-  --output airapix\model\tokenizer\tokenizer.json `
+Train a customized Byte-Pair Encoding (BPE) tokenizer:
+
+```bash
+python -m airapix.model.tokenizer.train_tokenizer \
+  --input dataset_builder/data/processed/train.jsonl \
+  --output airapix/model/tokenizer/tokenizer.json \
   --vocab-size 12000
 ```
 
-## Phase 3 Training
+---
 
-Probe VRAM first:
+## 🏋️ Training & Distillation
 
-```powershell
-python -m airapix.training.probe_vram --config training\config.yaml
-```
+### 1. Direct Training
 
-Then train:
-
-```powershell
-python -m airapix.training.train --config training\config.yaml
-```
-
-## Google Colab
-
-For Colab, use the single runner:
+Train locally or on a server:
 
 ```bash
-python colab/run_colab_training.py --max-steps 1000 --log-every 5
+python -m airapix.training.train \
+  --config training/config.colab_8b_qlora.yaml \
+  --preset 8b \
+  --load-in-4bit \
+  --use-qlora
 ```
 
-To generate Qwen2.5-7B teacher data first:
+### 2. Frontier Teacher Model Distillation
+
+Download teacher model weights (`Qwen2.5-72B`, `DeepSeek-R1-32B`, `Llama-3.3-70B`) and run offline sequence distillation:
 
 ```bash
-python colab/run_colab_training.py --download-teachers --distill --distill-limit 1000 --max-steps 1000 --log-every 5
+# Check/download teacher models
+python colab/run_colab_training.py --download-teachers --skip-dataset --skip-train
+
+# Run offline teacher distillation
+python -m airapix.training.distill_from_qwen \
+  --config training/config.yaml \
+  --input dataset_builder/data/processed/train_chat.jsonl \
+  --output dataset_builder/data/processed/distilled_teacher.jsonl
 ```
 
-To only download/check Aira's teacher sub-models:
+---
+
+## 💬 Inference & Response Generation
+
+Generate responses using a trained checkpoint or model architecture:
 
 ```bash
-python colab/run_colab_training.py --download-teachers --skip-dataset --skip-tokenizer --skip-probe --skip-train
+python airapix/inference/generate.py \
+  --preset 8b \
+  --prompt "Explain quantum entanglement in simple terms." \
+  --max-tokens 256 \
+  --temperature 0.7
 ```
 
-See `colab/README.md` for options. The Colab runner prints runtime details,
-dataset counts, teacher-generation progress, loss, learning rate, token
-throughput, ETA, checkpoint events, and GPU memory directly in the CLI.
+---
 
-Optional offline distillation from Qwen2.5-7B:
+## 📦 Quantization & Edge Export
 
-```powershell
-python -m airapix.training.distill_from_qwen `
-  --config training\config.yaml `
-  --input dataset_builder\data\processed\train_chat.jsonl `
-  --output dataset_builder\data\processed\distilled_qwen25_7b.jsonl
+Export trained weights into 4-bit NF4/INT4 for low-resource deployment (4GB VRAM / 2GB RAM):
+
+```bash
+python scripts/export_quantized.py \
+  --checkpoint path/to/model.pt \
+  --output path/to/airapix_8b_4bit.safetensors
 ```
 
-Running the 7B teacher locally is not realistic on a 4 GB GPU unless you use CPU
-offload or quantization. The script is designed for Colab or any machine with
-enough memory.
+---
 
-## Research Notes
+## 📄 License & Research Notes
 
-The research assumptions and current model references used for this bootstrap
-are recorded in `docs/research_notes.md`.
+Architectural research notes and benchmark comparisons are documented under `docs/research_notes.md`.
