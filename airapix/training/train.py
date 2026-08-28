@@ -128,7 +128,7 @@ def prepare_4bit_model_layer_by_layer(
     model_cfg, device: torch.device, compute_dtype: torch.dtype | None
 ) -> AiraForCausalLM:
     """Builds and quantizes model layer-by-layer directly onto device in 4-bit (NF4).
-    Prevents peak VRAM spike during 8B model initialization.
+    Prevents CUDA VRAM spike during model initialization.
     """
     try:
         import bitsandbytes as bnb
@@ -136,8 +136,10 @@ def prepare_4bit_model_layer_by_layer(
         print("[train] WARNING: bitsandbytes is not installed. Falling back to standard device instantiation.", flush=True)
         return AiraForCausalLM(model_cfg).to(device)
 
+    import gc
+
     dtype = compute_dtype if compute_dtype is not None else torch.float16
-    print(f"[train] Constructing preset '{model_cfg}' layer-by-layer directly in 4-bit (NF4) on {device}...", flush=True)
+    print(f"[train] Constructing preset '{model_cfg.d_model}d_{model_cfg.n_layers}L' layer-by-layer directly in 4-bit (NF4) on {device}...", flush=True)
 
     # 1. Create skeleton model structure on meta device (0 bytes VRAM allocated)
     if hasattr(torch, "set_default_device"):
@@ -153,43 +155,43 @@ def prepare_4bit_model_layer_by_layer(
     )
     torch.nn.init.normal_(embed_tokens.weight, mean=0.0, std=0.02)
 
-    # 3. Construct and quantize each block individually on device
-    from airapix.model.model import AiraBlock
-
-    def convert_linear_to_4bit(module: torch.nn.Module):
+    # 3. Helper to convert CPU linear layer to 4-bit Linear4bit on CUDA GPU
+    def quantize_module_to_cuda(module: torch.nn.Module) -> torch.nn.Module:
         for name, child in list(module.named_children()):
             if isinstance(child, torch.nn.Linear):
+                in_feat, out_feat = child.in_features, child.out_features
+                has_bias = child.bias is not None
                 qline = bnb.nn.Linear4bit(
-                    child.in_features,
-                    child.out_features,
-                    bias=child.bias is not None,
+                    in_feat,
+                    out_feat,
+                    bias=has_bias,
                     compute_dtype=dtype,
                     quant_type="nf4",
                     device=device,
                 )
-                qline.weight.data.copy_(child.weight.data)
-                if child.bias is not None:
-                    qline.bias.data.copy_(child.bias.data)
+                with torch.no_grad():
+                    qline.weight.data.copy_(child.weight.data.to(device=device, dtype=dtype))
+                    if has_bias and child.bias is not None:
+                        qline.bias.data.copy_(child.bias.data.to(device=device, dtype=dtype))
                 setattr(module, name, qline)
             else:
-                convert_linear_to_4bit(child)
+                quantize_module_to_cuda(child)
+        return module
+
+    # 4. Construct and quantize each block individually from CPU -> CUDA 4-bit
+    from airapix.model.model import AiraBlock
 
     blocks = torch.nn.ModuleList()
     for i in range(model_cfg.n_layers):
-        if hasattr(torch, "set_default_device") and device.type == "cuda":
-            torch.set_default_device(device)
-            if dtype is not None:
-                torch.set_default_dtype(dtype)
-            try:
-                block = AiraBlock(model_cfg, i)
-            finally:
-                torch.set_default_device("cpu")
-                torch.set_default_dtype(torch.float32)
-        else:
-            block = AiraBlock(model_cfg, i).to(device=device, dtype=dtype)
+        cpu_block = AiraBlock(model_cfg, i).to(dtype=dtype)
+        cpu_block = cpu_block.to(device=device)
+        quantize_module_to_cuda(cpu_block)
+        blocks.append(cpu_block)
 
-        convert_linear_to_4bit(block)
-        blocks.append(block)
+        if i % 4 == 0:
+            gc.collect()
+            if device.type == "cuda":
+                torch.cuda.empty_cache()
 
     from airapix.model.layers import RMSNorm
 
@@ -202,6 +204,10 @@ def prepare_4bit_model_layer_by_layer(
     meta_model.blocks = blocks
     meta_model.norm = norm
     meta_model.lm_head = lm_head
+
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     print("[train] Successfully materialized and quantized 8B model in 4-bit NF4 directly on CUDA GPU!", flush=True)
     return meta_model
