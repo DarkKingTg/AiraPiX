@@ -100,6 +100,62 @@ datasets:
       input: system
       output: chat
 
+  - name: fineweb_edu_sample
+    enabled: true
+    hf_name: HuggingFaceFW/fineweb-edu
+    hf_config: sample-10BT
+    split: train
+    streaming: true
+    sample_limit: 25000
+    category: text
+    format: plain_text
+    fields:
+      output: text
+
+  - name: ultrachat_200k_sample
+    enabled: true
+    hf_name: HuggingFaceH4/ultrachat_200k
+    split: train_sft
+    streaming: true
+    sample_limit: 25000
+    category: chat
+    format: ultrachat
+    fields:
+      messages: messages
+
+  - name: orca_math_200k
+    enabled: true
+    hf_name: microsoft/orca-math-word-problems-200k
+    split: train
+    streaming: true
+    sample_limit: 20000
+    category: reasoning
+    format: qa
+    fields:
+      input: question
+      output: answer
+
+  - name: code_feedback_filtered
+    enabled: true
+    hf_name: m-a-p/CodeFeedback-Filtered-Instruction
+    split: train
+    streaming: true
+    sample_limit: 20000
+    category: code
+    format: instruction_response
+    fields:
+      instruction: query
+      output: answer
+
+  - name: hermes_function_calling
+    enabled: true
+    hf_name: nlaing/Hermes-Function-Calling-V1
+    split: train
+    streaming: true
+    sample_limit: 20000
+    category: tool_use
+    format: auto_text
+
   # OASST1 needs thread reconstruction from message trees. Keep disabled until
   # the lighter sources have completed successfully.
   - name: oasst1

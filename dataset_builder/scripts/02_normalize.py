@@ -46,6 +46,20 @@ def normalize_record(row: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any
     elif fmt == "qa":
         input_text = get_field(row, fields.get("input", "question"))
         output_text = get_field(row, fields.get("output", "answer"))
+    elif fmt == "ultrachat":
+        msgs = row.get("messages", [])
+        if isinstance(msgs, list) and len(msgs) >= 2:
+            input_parts = []
+            for m in msgs[:-1]:
+                role = str(m.get("role", "user")).capitalize()
+                content = normalize_space(str(m.get("content", "")))
+                if content:
+                    input_parts.append(f"{role}: {content}")
+            input_text = "\n".join(input_parts)
+            output_text = normalize_space(str(msgs[-1].get("content", "")))
+        else:
+            input_text = get_field(row, fields.get("instruction", "instruction"))
+            output_text = get_field(row, fields.get("output", "output"))
     elif fmt == "glaive_tool":
         raw_input = get_field(row, fields.get("input", "system"))
         raw_output = get_field(row, fields.get("output", "chat"))
