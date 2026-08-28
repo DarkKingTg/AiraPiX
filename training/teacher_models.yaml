@@ -1,6 +1,27 @@
 cache_dir: models/teachers/hf_cache
 local_dir:
 models:
+  - name: qwen25_72b_instruct
+    enabled: true
+    repo_id: Qwen/Qwen2.5-72B-Instruct
+    role: frontier_sequence_teacher
+    notes: Frontier 72B open-weights teacher for highest-quality reasoning, coding, and instruction distillation.
+    expected_size_gb: 145.0
+
+  - name: deepseek_r1_32b
+    enabled: true
+    repo_id: deepseek-ai/DeepSeek-R1-Distill-Qwen-32B
+    role: frontier_reasoning_teacher
+    notes: Frontier 32B DeepSeek-R1 distilled teacher for complex step-by-step reasoning and logic.
+    expected_size_gb: 64.0
+
+  - name: llama33_70b_instruct
+    enabled: true
+    repo_id: meta-llama/Llama-3.3-70B-Instruct
+    role: frontier_chat_teacher
+    notes: Meta Llama 3.3 70B frontier teacher for instruction and chat capabilities.
+    expected_size_gb: 140.0
+
   - name: qwen25_7b_instruct
     enabled: true
     repo_id: Qwen/Qwen2.5-7B-Instruct
