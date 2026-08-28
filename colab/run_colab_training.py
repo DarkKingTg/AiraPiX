@@ -249,6 +249,7 @@ def main() -> None:
     env = os.environ.copy()
     env.setdefault("TOKENIZERS_PARALLELISM", "false")
     env.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    env.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
     if args.hf_token:
         env["HF_TOKEN"] = args.hf_token
         env["HUGGING_FACE_HUB_TOKEN"] = args.hf_token
