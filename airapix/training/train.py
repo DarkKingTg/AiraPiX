@@ -124,12 +124,45 @@ def maybe_plot_logs(log_path: Path) -> None:
     plt.close()
 
 
+def prepare_4bit_model(model: torch.nn.Module) -> torch.nn.Module:
+    """Attempts to quantize model linear layers using bitsandbytes 4-bit (NF4) if installed."""
+    try:
+        import bitsandbytes as bnb
+    except ImportError:
+        print("[train] WARNING: bitsandbytes is not installed. Skipping 4-bit weight quantization.", flush=True)
+        return model
+
+    def replace_with_4bit(module: torch.nn.Module):
+        for name, child in list(module.named_children()):
+            if isinstance(child, torch.nn.Linear):
+                quant_layer = bnb.nn.Linear4bit(
+                    child.in_features,
+                    child.out_features,
+                    bias=child.bias is not None,
+                    compute_dtype=torch.bfloat16 if torch.cuda.is_available() and torch.cuda.is_bf16_supported() else torch.float16,
+                    quant_type="nf4",
+                )
+                quant_layer.weight = child.weight
+                if child.bias is not None:
+                    quant_layer.bias = child.bias
+                setattr(module, name, quant_layer)
+            else:
+                replace_with_4bit(child)
+
+    replace_with_4bit(model)
+    print("[train] Converted linear layers to 4-bit (bitsandbytes NF4)", flush=True)
+    return model
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="training/config.yaml")
     parser.add_argument("--resume", type=str)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--log-every", type=int, default=None)
+    parser.add_argument("--preset", type=str, help="Override model preset (e.g. 1.5b, 3b, 7b, 8b)")
+    parser.add_argument("--load-in-4bit", action="store_true", help="Enable 4-bit NF4 weight quantization")
+    parser.add_argument("--use-qlora", action="store_true", help="Apply QLoRA adapters to model")
     args = parser.parse_args()
 
     config = load_training_config(args.config)
@@ -148,8 +181,10 @@ def main() -> None:
 
     tokenizer_path = resolve_project_path(config, config["data"]["tokenizer_path"])
     tokenizer = TokenizerWrapper(tokenizer_path)
+
+    preset_name = args.preset or config["model"]["preset"]
     model_cfg = config_from_preset(
-        config["model"]["preset"],
+        preset_name,
         vocab_size=tokenizer.vocab_size,
         context_len=int(config["model"]["context_len"]),
         dropout=float(config["model"].get("dropout", 0.0)),
@@ -158,7 +193,17 @@ def main() -> None:
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
     )
-    model = AiraForCausalLM(model_cfg).to(device)
+    model = AiraForCausalLM(model_cfg)
+
+    if args.load_in_4bit:
+        model = prepare_4bit_model(model)
+
+    if args.use_qlora:
+        from airapix.model.lora import apply_lora_to_model
+        model = apply_lora_to_model(model, r=int(config.get("lora", {}).get("r", 8)))
+        print(f"[train] Applied QLoRA adapters (r={config.get('lora', {}).get('r', 8)})", flush=True)
+
+    model = model.to(device)
     optimizer = build_optimizer(model, config["optimizer"])
 
     weights = normalize_weights(config["data"]["mixture_weights"])

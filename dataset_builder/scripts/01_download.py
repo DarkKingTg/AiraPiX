@@ -11,6 +11,7 @@ from common import enabled_datasets, ensure_dirs, load_config, pipeline_path
 
 
 def download_one(spec: dict, raw_dir: Path) -> dict:
+    import time
     try:
         from datasets import load_dataset
     except ImportError as exc:
@@ -26,19 +27,38 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
     if spec.get("hf_config"):
         kwargs["name"] = spec["hf_config"]
 
-    dataset = load_dataset(**kwargs)
-    sample_limit = spec.get("sample_limit")
-    rows = dataset if sample_limit is None else islice(dataset, int(sample_limit))
+    max_retries = 5
+    dataset = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            dataset = load_dataset(**kwargs)
+            break
+        except Exception as err:
+            if attempt == max_retries:
+                raise err
+            print(f"  [retry {attempt}/{max_retries}] Failed to connect to HF Hub ({err}). Retrying in {attempt * 3}s...")
+            time.sleep(attempt * 3)
 
+    sample_limit = spec.get("sample_limit")
+    
     count = 0
     with out_path.open("w", encoding="utf-8", newline="\n") as f:
-        for row in rows:
-            row = dict(row)
-            row["_source_name"] = name
-            row["_category"] = spec["category"]
-            row["_format"] = spec["format"]
-            f.write(json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n")
-            count += 1
+        rows = dataset if sample_limit is None else islice(dataset, int(sample_limit))
+        for attempt in range(1, max_retries + 1):
+            try:
+                for row in rows:
+                    row_dict = dict(row)
+                    row_dict["_source_name"] = name
+                    row_dict["_category"] = spec["category"]
+                    row_dict["_format"] = spec["format"]
+                    f.write(json.dumps(row_dict, ensure_ascii=False, sort_keys=True) + "\n")
+                    count += 1
+                break
+            except Exception as err:
+                if attempt == max_retries:
+                    raise err
+                print(f"  [retry {attempt}/{max_retries}] Error streaming rows ({err}). Retrying in {attempt * 3}s...")
+                time.sleep(attempt * 3)
 
     return {"name": name, "raw_path": str(out_path), "records": count}
 

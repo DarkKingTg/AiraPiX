@@ -1,0 +1,57 @@
+model:
+  preset: 8b
+  vocab_size: 12000
+  context_len: 2048
+  dropout: 0.05
+  gradient_checkpointing: true
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+
+data:
+  tokenizer_path: airapix/model/tokenizer/tokenizer.json
+  train_path: dataset_builder/data/processed/train.jsonl
+  val_path: dataset_builder/data/processed/val.jsonl
+  category_shards:
+    text: dataset_builder/data/processed/train_text.jsonl
+    chat: dataset_builder/data/processed/train_chat.jsonl
+    reasoning: dataset_builder/data/processed/train_reasoning.jsonl
+    code: dataset_builder/data/processed/train_code.jsonl
+    tool_use: dataset_builder/data/processed/train_tool_use.jsonl
+  mixture_weights:
+    text: 0.30
+    chat: 0.20
+    reasoning: 0.25
+    code: 0.15
+    tool_use: 0.10
+  use_compression_prior: true
+  manifest_path: dataset_builder/data/manifests/dataset_manifest.json
+  num_workers: 2
+
+training:
+  output_dir: runs/colab_8b_qlora
+  seed: 42
+  max_steps: 10000
+  micro_batch_size: 2
+  target_effective_batch_size: 32
+  eval_interval: 250
+  eval_batches: 20
+  checkpoint_interval: 250
+  log_interval: 10
+  precision: bf16
+  grad_clip_norm: 1.0
+
+optimizer:
+  name: muon_adamw
+  peak_lr: 0.0002
+  min_lr_ratio: 0.1
+  warmup_fraction: 0.03
+  weight_decay: 0.01
+  adamw_betas: [0.9, 0.95]
+  adamw_eps: 0.00000001
+  muon_momentum: 0.95
+  muon_ns_steps: 5
+  muon_lr_multiplier: 1.0
+  adamw_lr_multiplier: 1.0

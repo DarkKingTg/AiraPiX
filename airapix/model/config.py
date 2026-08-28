@@ -55,6 +55,10 @@ MODEL_SIZE_PRESETS = {
     "60m": dict(d_model=384, n_layers=12, n_heads=6, mla_latent_dim=192, qk_nope_dim=48, qk_rope_dim=16, v_head_dim=64),
     "90m": dict(d_model=448, n_layers=14, n_heads=7, mla_latent_dim=224, qk_nope_dim=48, qk_rope_dim=16, v_head_dim=64),
     "125m": dict(d_model=512, n_layers=16, n_heads=8, mla_latent_dim=256, qk_nope_dim=48, qk_rope_dim=16, v_head_dim=64),
+    "1.5b": dict(d_model=1536, n_layers=24, n_heads=16, mla_latent_dim=512, qk_nope_dim=64, qk_rope_dim=32, v_head_dim=64),
+    "3b": dict(d_model=2560, n_layers=28, n_heads=20, mla_latent_dim=640, qk_nope_dim=96, qk_rope_dim=32, v_head_dim=96),
+    "7b": dict(d_model=3584, n_layers=30, n_heads=28, mla_latent_dim=896, qk_nope_dim=128, qk_rope_dim=64, v_head_dim=128),
+    "8b": dict(d_model=4096, n_layers=32, n_heads=32, mla_latent_dim=1024, qk_nope_dim=128, qk_rope_dim=64, v_head_dim=128),
 }
 
 

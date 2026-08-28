@@ -223,6 +223,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-tokenizer", action="store_true")
     parser.add_argument("--skip-probe", action="store_true")
     parser.add_argument("--skip-train", action="store_true")
+    parser.add_argument("--preset", type=str, default=None, help="Model preset (e.g. 1.5b, 3b, 7b, 8b)")
+    parser.add_argument("--load-in-4bit", action="store_true", help="Enable 4-bit weight quantization")
+    parser.add_argument("--use-qlora", action="store_true", help="Apply QLoRA adapters for efficient 4-bit fine-tuning")
+    parser.add_argument("--tpu", action="store_true", help="Enable TPU v5e-1 PyTorch-XLA execution mode")
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--micro-batch-size", type=int, default=None)
     parser.add_argument("--effective-batch-size", type=int, default=None)
@@ -358,18 +362,22 @@ def main() -> None:
         run([sys.executable, "-m", "airapix.training.probe_vram", "--config", str(colab_config)], env=env)
 
     if not args.skip_train:
-        run(
-            [
-                sys.executable,
-                "-m",
-                "airapix.training.train",
-                "--config",
-                str(colab_config),
-                "--log-every",
-                str(args.log_every),
-            ],
-            env=env,
-        )
+        train_cmd = [
+            sys.executable,
+            "-m",
+            "airapix.training.train",
+            "--config",
+            str(colab_config),
+            "--log-every",
+            str(args.log_every),
+        ]
+        if args.preset:
+            train_cmd.extend(["--preset", args.preset])
+        if args.load_in_4bit:
+            train_cmd.append("--load-in-4bit")
+        if args.use_qlora:
+            train_cmd.append("--use-qlora")
+        run(train_cmd, env=env)
 
     maybe_copy_to_drive(
         drive_dir,
