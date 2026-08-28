@@ -124,8 +124,91 @@ def maybe_plot_logs(log_path: Path) -> None:
     plt.close()
 
 
+def prepare_4bit_model_layer_by_layer(
+    model_cfg, device: torch.device, compute_dtype: torch.dtype | None
+) -> AiraForCausalLM:
+    """Builds and quantizes model layer-by-layer directly onto device in 4-bit (NF4).
+    Prevents peak VRAM spike during 8B model initialization.
+    """
+    try:
+        import bitsandbytes as bnb
+    except ImportError:
+        print("[train] WARNING: bitsandbytes is not installed. Falling back to standard device instantiation.", flush=True)
+        return AiraForCausalLM(model_cfg).to(device)
+
+    dtype = compute_dtype if compute_dtype is not None else torch.float16
+    print(f"[train] Constructing preset '{model_cfg}' layer-by-layer directly in 4-bit (NF4) on {device}...", flush=True)
+
+    # 1. Create skeleton model structure on meta device (0 bytes VRAM allocated)
+    if hasattr(torch, "set_default_device"):
+        torch.set_default_device("meta")
+        meta_model = AiraForCausalLM(model_cfg)
+        torch.set_default_device("cpu")
+    else:
+        meta_model = AiraForCausalLM(model_cfg)
+
+    # 2. Materialize embed_tokens directly on CUDA GPU
+    embed_tokens = torch.nn.Embedding(
+        model_cfg.vocab_size, model_cfg.d_model, padding_idx=model_cfg.pad_token_id, device=device, dtype=dtype
+    )
+    torch.nn.init.normal_(embed_tokens.weight, mean=0.0, std=0.02)
+
+    # 3. Construct and quantize each block individually on device
+    from airapix.model.model import AiraBlock
+
+    def convert_linear_to_4bit(module: torch.nn.Module):
+        for name, child in list(module.named_children()):
+            if isinstance(child, torch.nn.Linear):
+                qline = bnb.nn.Linear4bit(
+                    child.in_features,
+                    child.out_features,
+                    bias=child.bias is not None,
+                    compute_dtype=dtype,
+                    quant_type="nf4",
+                    device=device,
+                )
+                qline.weight.data.copy_(child.weight.data)
+                if child.bias is not None:
+                    qline.bias.data.copy_(child.bias.data)
+                setattr(module, name, qline)
+            else:
+                convert_linear_to_4bit(child)
+
+    blocks = torch.nn.ModuleList()
+    for i in range(model_cfg.n_layers):
+        if hasattr(torch, "set_default_device") and device.type == "cuda":
+            torch.set_default_device(device)
+            if dtype is not None:
+                torch.set_default_dtype(dtype)
+            try:
+                block = AiraBlock(model_cfg, i)
+            finally:
+                torch.set_default_device("cpu")
+                torch.set_default_dtype(torch.float32)
+        else:
+            block = AiraBlock(model_cfg, i).to(device=device, dtype=dtype)
+
+        convert_linear_to_4bit(block)
+        blocks.append(block)
+
+    from airapix.model.layers import RMSNorm
+
+    norm = RMSNorm(model_cfg.d_model).to(device=device, dtype=dtype)
+    lm_head = torch.nn.Linear(model_cfg.d_model, model_cfg.vocab_size, bias=False, device=device, dtype=dtype)
+    if model_cfg.tie_embeddings:
+        lm_head.weight = embed_tokens.weight
+
+    meta_model.embed_tokens = embed_tokens
+    meta_model.blocks = blocks
+    meta_model.norm = norm
+    meta_model.lm_head = lm_head
+
+    print("[train] Successfully materialized and quantized 8B model in 4-bit NF4 directly on CUDA GPU!", flush=True)
+    return meta_model
+
+
 def prepare_4bit_model(model: torch.nn.Module) -> torch.nn.Module:
-    """Attempts to quantize model linear layers using bitsandbytes 4-bit (NF4) if installed."""
+    """Fallback 4-bit conversion for pre-constructed PyTorch modules."""
     try:
         import bitsandbytes as bnb
     except ImportError:
@@ -193,21 +276,25 @@ def main() -> None:
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
     )
-    print(f"[train] Instantiating preset '{preset_name}' model for device: {device} ({precision_name})", flush=True)
-    if hasattr(torch, "set_default_device") and device.type == "cuda":
-        torch.set_default_device(device)
-        if dtype is not None:
-            torch.set_default_dtype(dtype)
-        try:
-            model = AiraForCausalLM(model_cfg)
-        finally:
-            torch.set_default_device("cpu")
-            torch.set_default_dtype(torch.float32)
-    else:
-        model = AiraForCausalLM(model_cfg).to(device)
 
-    if args.load_in_4bit:
-        model = prepare_4bit_model(model)
+    if args.load_in_4bit and device.type == "cuda":
+        model = prepare_4bit_model_layer_by_layer(model_cfg, device, dtype)
+    else:
+        print(f"[train] Instantiating preset '{preset_name}' model for device: {device} ({precision_name})", flush=True)
+        if hasattr(torch, "set_default_device") and device.type == "cuda":
+            torch.set_default_device(device)
+            if dtype is not None:
+                torch.set_default_dtype(dtype)
+            try:
+                model = AiraForCausalLM(model_cfg)
+            finally:
+                torch.set_default_device("cpu")
+                torch.set_default_dtype(torch.float32)
+        else:
+            model = AiraForCausalLM(model_cfg).to(device)
+
+        if args.load_in_4bit:
+            model = prepare_4bit_model(model)
 
     if args.use_qlora:
         from airapix.model.lora import apply_lora_to_model
