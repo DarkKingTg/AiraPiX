@@ -193,7 +193,18 @@ def main() -> None:
         bos_token_id=tokenizer.bos_token_id,
         eos_token_id=tokenizer.eos_token_id,
     )
-    model = AiraForCausalLM(model_cfg)
+    print(f"[train] Instantiating preset '{preset_name}' model for device: {device} ({precision_name})", flush=True)
+    if hasattr(torch, "set_default_device") and device.type == "cuda":
+        torch.set_default_device(device)
+        if dtype is not None:
+            torch.set_default_dtype(dtype)
+        try:
+            model = AiraForCausalLM(model_cfg)
+        finally:
+            torch.set_default_device("cpu")
+            torch.set_default_dtype(torch.float32)
+    else:
+        model = AiraForCausalLM(model_cfg).to(device)
 
     if args.load_in_4bit:
         model = prepare_4bit_model(model)
