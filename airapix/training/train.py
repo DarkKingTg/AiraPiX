@@ -176,6 +176,7 @@ def prepare_4bit_model_layer_by_layer(
                 setattr(module, name, qline)
             else:
                 quantize_module_to_cuda(child)
+                child.to(device=device)
         return module
 
     # 4. Construct and quantize each block individually from CPU -> CUDA 4-bit
@@ -184,7 +185,6 @@ def prepare_4bit_model_layer_by_layer(
     blocks = torch.nn.ModuleList()
     for i in range(model_cfg.n_layers):
         cpu_block = AiraBlock(model_cfg, i).to(dtype=dtype)
-        cpu_block = cpu_block.to(device=device)
         quantize_module_to_cuda(cpu_block)
         blocks.append(cpu_block)
 
