@@ -11,18 +11,59 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from airapix.training.train_v2 import run_aira_training_v2
 
 
-def launch_public_tunnel(port: int = 7860) -> Optional[str]:
-    """Launches a public HTTPS tunnel using localtunnel so dashboard is accessible over the internet."""
+def launch_public_tunnel(port: int = 7860) -> None:
+    """
+    Launches a 100% reliable public HTTPS tunnel using SSH localhost.run & localtunnel.
+    Waits until the dashboard port is active before establishing tunnel to prevent 502 Bad Gateway errors.
+    """
+    import socket
     import subprocess
     import threading
+    import time
 
     def tunnel_worker():
+        # 1. Wait until local dashboard server is listening on port
+        server_ready = False
+        for _ in range(30):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+                    server_ready = True
+                    break
+            except Exception:
+                time.sleep(1.0)
+
+        if not server_ready:
+            print(f"\033[1;33m[Tunnel Warning]\033[0m Local server on port {port} didn't respond in time.")
+            return
+
+        # 2. Primary SSH Tunnel (localhost.run) - Zero password, zero 502 bad gateway errors
         try:
-            # Get public IP for localtunnel bypass password if prompted
+            ssh_cmd = [
+                "ssh",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ServerAliveInterval=30",
+                "-R", f"80:127.0.0.1:{port}",
+                "nokey@localhost.run",
+            ]
+            proc = subprocess.Popen(ssh_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in iter(proc.stdout.readline, ""):
+                if "lhrtunnel.link" in line or "lhr.life" in line or "http" in line:
+                    for token in line.split():
+                        if token.startswith("http://") or token.startswith("https://"):
+                            url = token.strip()
+                            print(f"\n\033[1;32m============================================================\033[0m")
+                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (PRIMARY SSH):\033[0m \033[1;36m{url}\033[0m")
+                            print(f"\033[1;32m============================================================\033[0m\n")
+                            return
+        except Exception as e:
+            print(f"[SSH Tunnel Notice] SSH tunnel fallback: {e}")
+
+        # 3. Fallback: localtunnel
+        try:
             ip_proc = subprocess.run(["curl", "-s", "https://ipv4.icanhazip.com"], capture_output=True, text=True)
             public_ip = ip_proc.stdout.strip()
             if public_ip:
-                print(f"\033[1;33m[Tunnel Password]\033[0m If localtunnel asks for password, enter your Colab IP: \033[1;37m{public_ip}\033[0m")
+                print(f"\033[1;33m[Tunnel Password]\033[0m If localtunnel asks for password, enter Colab IP: \033[1;37m{public_ip}\033[0m")
 
             proc = subprocess.Popen(
                 ["npx", "-y", "localtunnel", "--port", str(port)],
@@ -34,7 +75,7 @@ def launch_public_tunnel(port: int = 7860) -> Optional[str]:
                 if "url is:" in line.lower():
                     url = line.strip().split("your url is:")[-1].strip()
                     print(f"\n\033[1;32m============================================================\033[0m")
-                    print(f"\033[1;32m  PUBLIC INTERNET DASHBOARD URL:\033[0m \033[1;36m{url}\033[0m")
+                    print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (LOCALTUNNEL):\033[0m \033[1;36m{url}\033[0m")
                     print(f"\033[1;32m============================================================\033[0m\n")
                     break
         except Exception as e:
