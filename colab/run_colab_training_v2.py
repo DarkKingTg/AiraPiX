@@ -36,27 +36,50 @@ def launch_public_tunnel(port: int = 7860) -> None:
             print(f"\033[1;33m[Tunnel Warning]\033[0m Local server on port {port} didn't respond in time.")
             return
 
-        # 2. Primary SSH Tunnel (localhost.run) - Zero password, zero 502 bad gateway errors
+        # 2. Primary SSH Tunnel (Pinggy.io) - Zero SSH key required, zero 502 bad gateway errors
+        try:
+            ssh_cmd = [
+                "ssh",
+                "-o", "StrictHostKeyChecking=no",
+                "-o", "ServerAliveInterval=30",
+                "-p", "443",
+                "-R", f"0:127.0.0.1:{port}",
+                "a.pinggy.io",
+            ]
+            proc = subprocess.Popen(ssh_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            for line in iter(proc.stdout.readline, ""):
+                if "pinggy.link" in line or "pinggy.online" in line or "http" in line:
+                    for token in line.split():
+                        if token.startswith("http://") or token.startswith("https://"):
+                            url = token.strip()
+                            print(f"\n\033[1;32m============================================================\033[0m")
+                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (PINGGY SSH):\033[0m \033[1;36m{url}\033[0m")
+                            print(f"\033[1;32m============================================================\033[0m\n")
+                            return
+        except Exception as e:
+            print(f"[Pinggy Notice] Pinggy SSH tunnel fallback: {e}")
+
+        # 3. Secondary SSH Tunnel (Serveo.net) - Zero SSH key required
         try:
             ssh_cmd = [
                 "ssh",
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "ServerAliveInterval=30",
                 "-R", f"80:127.0.0.1:{port}",
-                "nokey@localhost.run",
+                "serveo.net",
             ]
             proc = subprocess.Popen(ssh_cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
             for line in iter(proc.stdout.readline, ""):
-                if "lhrtunnel.link" in line or "lhr.life" in line or "http" in line:
+                if "serveo.net" in line or "http" in line:
                     for token in line.split():
                         if token.startswith("http://") or token.startswith("https://"):
                             url = token.strip()
                             print(f"\n\033[1;32m============================================================\033[0m")
-                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (PRIMARY SSH):\033[0m \033[1;36m{url}\033[0m")
+                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (SERVEO SSH):\033[0m \033[1;36m{url}\033[0m")
                             print(f"\033[1;32m============================================================\033[0m\n")
                             return
         except Exception as e:
-            print(f"[SSH Tunnel Notice] SSH tunnel fallback: {e}")
+            print(f"[Serveo Notice] Serveo SSH tunnel fallback: {e}")
 
         # 3. Fallback: localtunnel
         try:
