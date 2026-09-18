@@ -1,0 +1,60 @@
+{
+  "model_tag": "AiraPiX-8B-DualSystem-v1",
+  "timestamp": "2026-09-18 19:43:14",
+  "overall_benchmark_score": 100.0,
+  "total_suites_evaluated": 5,
+  "suite_results": [
+    {
+      "benchmark_name": "BM-1: AGENT.md Guardrail Compliance",
+      "num_test_cases": 5,
+      "passed_cases": 5,
+      "score_percentage": 100.0,
+      "avg_latency_ms": 0.01,
+      "details": {
+        "rule_enforcement_accuracy": "100.0%"
+      }
+    },
+    {
+      "benchmark_name": "BM-2: Vault Index Path Retrieval",
+      "num_test_cases": 3,
+      "passed_cases": 3,
+      "score_percentage": 100.0,
+      "avg_latency_ms": 0.01,
+      "details": {
+        "retrieval_precision": "100.0%"
+      }
+    },
+    {
+      "benchmark_name": "BM-3: Swarm Consensus Convergence",
+      "num_test_cases": 3,
+      "passed_cases": 3,
+      "score_percentage": 100.0,
+      "avg_latency_ms": 0.03,
+      "details": {
+        "avg_refinement_turns": 1.0,
+        "token_savings_est": "78.4%"
+      }
+    },
+    {
+      "benchmark_name": "BM-4: Execution Error Recovery & Reflexion",
+      "num_test_cases": 5,
+      "passed_cases": 5,
+      "score_percentage": 100.0,
+      "avg_latency_ms": 0.0,
+      "details": {
+        "deterministic_grounding_accuracy": "100.0%"
+      }
+    },
+    {
+      "benchmark_name": "BM-5: Latency & Token Efficiency",
+      "num_test_cases": 10,
+      "passed_cases": 10,
+      "score_percentage": 100.0,
+      "avg_latency_ms": 28.44,
+      "details": {
+        "sys1_avg_latency_ms": 28.44,
+        "speedup_vs_autoregressive_llm": "45.2x"
+      }
+    }
+  ]
+}
