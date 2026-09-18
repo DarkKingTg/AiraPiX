@@ -134,7 +134,7 @@ def run_aira_training_v2(
 
         # Forward pass with AMP Autocast
         if device == "cuda":
-            with torch.cuda.amp.autocast(dtype=torch.float16):
+            with torch.amp.autocast("cuda", dtype=torch.float16):
                 out = model(input_ids, labels=labels)
                 lm_loss = out["loss"]
         else:
