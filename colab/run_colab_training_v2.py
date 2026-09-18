@@ -131,9 +131,18 @@ def main() -> None:
     try:
         import google.colab
         in_colab = True
-        print("\033[1;32m[Colab]\033[0m Google Colab environment detected!")
-    except ImportError:
-        print("\033[1;33m[Colab]\033[0m Running in standard Python environment.")
+    # Check hardware & CUDA availability
+    import torch
+    cuda_available = torch.cuda.is_available()
+    print(f"[Hardware Check] PyTorch Version: {torch.__version__}")
+    print(f"[Hardware Check] CUDA Available: {cuda_available}")
+    if cuda_available:
+        print(f"\033[1;32m[GPU ACTIVE]\033[0m Detected GPU: \033[1;36m{torch.cuda.get_device_name(0)}\033[0m (VRAM: {torch.cuda.get_device_properties(0).total_memory / (1024**3):.2f} GB)")
+    else:
+        print(f"\033[1;31m[CRITICAL WARNING]\033[0m PyTorch is executing on CPU! CUDA GPU is not active in this session.")
+        print(f"\033[1;33mTo activate T4 GPU in Google Colab (10 seconds):\033[0m")
+        print(f"  1. Click Colab top menu: Runtime -> Change runtime type -> Hardware accelerator -> Select T4 GPU -> Save")
+        print(f"  2. Click Colab top menu: Runtime -> Restart session")
 
     checkpoint_dir = "runs/checkpoints"
 
