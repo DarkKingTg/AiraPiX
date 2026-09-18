@@ -11,6 +11,39 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from airapix.training.train_v2 import run_aira_training_v2
 
 
+def launch_public_tunnel(port: int = 7860) -> Optional[str]:
+    """Launches a public HTTPS tunnel using localtunnel so dashboard is accessible over the internet."""
+    import subprocess
+    import threading
+
+    def tunnel_worker():
+        try:
+            # Get public IP for localtunnel bypass password if prompted
+            ip_proc = subprocess.run(["curl", "-s", "https://ipv4.icanhazip.com"], capture_output=True, text=True)
+            public_ip = ip_proc.stdout.strip()
+            if public_ip:
+                print(f"\033[1;33m[Tunnel Password]\033[0m If localtunnel asks for password, enter your Colab IP: \033[1;37m{public_ip}\033[0m")
+
+            proc = subprocess.Popen(
+                ["npx", "-y", "localtunnel", "--port", str(port)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+            )
+            for line in iter(proc.stdout.readline, ""):
+                if "url is:" in line.lower():
+                    url = line.strip().split("your url is:")[-1].strip()
+                    print(f"\n\033[1;32m============================================================\033[0m")
+                    print(f"\033[1;32m  PUBLIC INTERNET DASHBOARD URL:\033[0m \033[1;36m{url}\033[0m")
+                    print(f"\033[1;32m============================================================\033[0m\n")
+                    break
+        except Exception as e:
+            print(f"\033[1;33m[Public Tunnel Notice]\033[0m Could not launch public tunnel: {e}")
+
+    t = threading.Thread(target=tunnel_worker, daemon=True)
+    t.start()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Google Colab Training Launcher v2 for Aira AI with Live Web UI")
     parser.add_argument("--preset", type=str, default="8b", help="Model preset (1.5b, 3b, 7b, 8b)")
@@ -20,6 +53,7 @@ def main() -> None:
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--mount-drive", action="store_true", help="Mount Google Drive for persistent checkpoints")
+    parser.add_argument("--public-tunnel", action="store_true", default=True, help="Create a public internet URL for the dashboard")
     parser.add_argument("--load-in-4bit", action="store_true", default=True, help="Use 4-bit NF4 quantization streaming")
     parser.add_argument("--use-qlora", action="store_true", default=True, help="Enable QLoRA training")
     args = parser.parse_args()
@@ -38,6 +72,10 @@ def main() -> None:
         print("\033[1;33m[Colab]\033[0m Running in standard Python environment.")
 
     checkpoint_dir = "runs/checkpoints"
+
+    # Launch public tunnel for internet access
+    if args.public_tunnel:
+        launch_public_tunnel(args.port)
 
     # Mount Google Drive if requested
     if args.mount_drive and in_colab:
