@@ -35,6 +35,8 @@ class MetricsTracker:
                 "val_loss": [],
                 "tokens_per_sec": [],
                 "vram_used_gb": [],
+                "sys1_loss": [],
+                "sys2_loss": [],
             },
             "logs": [],
             "checkpoints": [],
@@ -62,6 +64,8 @@ class MetricsTracker:
             hist["loss"].append(round(loss, 4))
             hist["tokens_per_sec"].append(round(tokens_per_sec, 1))
             hist["vram_used_gb"].append(round(vram_used_gb, 2))
+            hist["sys1_loss"].append(round(sys1_loss, 4))
+            hist["sys2_loss"].append(round(sys2_loss, 4))
             
             if val_loss is not None:
                 self.state["val_loss"] = round(val_loss, 4)

@@ -70,6 +70,7 @@ def run_aira_training_v2(
     else:
         vram_used_gb = 0.5
         print(f"[Hardware] Device: CPU (Simulation Mode)")
+        print(f"\033[1;33m[Hardware Notice]\033[0m CUDA GPU not active in Colab! Enable GPU: Colab top menu -> Runtime -> Change runtime type -> T4 GPU")
 
     GLOBAL_TRACKER.update(vram_total_gb=vram_total_gb, vram_used_gb=vram_used_gb)
 
@@ -199,9 +200,80 @@ def run_aira_training_v2(
             GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
             GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, float(lm_loss.detach()))
 
+    # Export Training Diagnostic Graphs
+    plots_dir = os.path.join(checkpoint_dir, "plots")
+    save_training_stat_plots(GLOBAL_TRACKER.get_snapshot().get("history", {}), plots_dir)
+
     GLOBAL_TRACKER.update(status="COMPLETED")
-    GLOBAL_TRACKER.log_message("SUCCESS", "Training completed successfully!")
+    GLOBAL_TRACKER.log_message("SUCCESS", f"Training completed successfully! Diagnostic plots exported to {plots_dir}")
     print(f"\n\033[1;32m[SUCCESS] Training finished in {int(time.time() - start_time)} seconds.\033[0m\n")
+
+
+def save_training_stat_plots(history: Dict[str, Any], output_dir: str) -> None:
+    """Generates and saves high-resolution plot images of training stats."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        os.makedirs(output_dir, exist_ok=True)
+        steps = history.get("steps", [])
+        if not steps:
+            return
+
+        loss = history.get("loss", [])
+        tok_s = history.get("tokens_per_sec", [])
+        vram = history.get("vram_used_gb", [])
+        sys1 = history.get("sys1_loss", [])
+        sys2 = history.get("sys2_loss", [])
+
+        # Style setup
+        plt.style.use("dark_background")
+        fig, axs = plt.subplots(2, 2, figsize=(14, 10), dpi=150)
+        fig.suptitle("Aira AI Training Performance & Diagnostics", fontsize=16, fontweight="bold", color="#00F2FE")
+
+        # 1. Loss Curve
+        axs[0, 0].plot(steps, loss, color="#00F2FE", label="Training Loss", linewidth=2)
+        axs[0, 0].set_title("Training Loss Trajectory", color="#FFF")
+        axs[0, 0].set_xlabel("Steps")
+        axs[0, 0].set_ylabel("Cross Entropy Loss")
+        axs[0, 0].grid(True, alpha=0.2)
+        axs[0, 0].legend()
+
+        # 2. System 1 vs System 2 Loss
+        if sys1 and sys2:
+            axs[0, 1].plot(steps[:len(sys1)], sys1, color="#00E676", label="System 1 Triage Loss", linewidth=1.5)
+            axs[0, 1].plot(steps[:len(sys2)], sys2, color="#FF0844", label="System 2 PRM Loss", linewidth=1.5)
+            axs[0, 1].set_title("Dual-System Loss Breakdown", color="#FFF")
+            axs[0, 1].set_xlabel("Steps")
+            axs[0, 1].set_ylabel("Loss")
+            axs[0, 1].grid(True, alpha=0.2)
+            axs[0, 1].legend()
+
+        # 3. Throughput (Tok/sec)
+        axs[1, 0].plot(steps, tok_s, color="#4FACFE", label="Throughput (tok/s)", linewidth=1.5)
+        axs[1, 0].set_title("Processing Throughput", color="#FFF")
+        axs[1, 0].set_xlabel("Steps")
+        axs[1, 0].set_ylabel("Tokens / Sec")
+        axs[1, 0].grid(True, alpha=0.2)
+        axs[1, 0].legend()
+
+        # 4. VRAM Usage
+        axs[1, 1].plot(steps, vram, color="#FFB74D", label="VRAM Allocated (GB)", linewidth=1.5)
+        axs[1, 1].set_title("GPU VRAM Allocation", color="#FFF")
+        axs[1, 1].set_xlabel("Steps")
+        axs[1, 1].set_ylabel("VRAM (GB)")
+        axs[1, 1].grid(True, alpha=0.2)
+        axs[1, 1].legend()
+
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
+
+        plot_path = os.path.join(output_dir, "training_summary_dashboard.png")
+        plt.savefig(plot_path)
+        plt.close(fig)
+        print(f"\033[1;32m[Plot Export]\033[0m Saved high-res training stat graphs to: \033[1;36m{plot_path}\033[0m")
+    except Exception as e:
+        print(f"[Plot Warning] Could not generate plots: {e}")
 
 
 def main() -> None:
