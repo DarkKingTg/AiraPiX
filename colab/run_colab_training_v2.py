@@ -43,19 +43,23 @@ def main() -> None:
     if args.mount_drive and in_colab:
         try:
             from google.colab import drive
-            drive.mount("/content/drive")
+            drive.mount("/content/drive", force_remount=False)
             checkpoint_dir = "/content/drive/MyDrive/AiraCheckpoints"
             os.makedirs(checkpoint_dir, exist_ok=True)
             print(f"\033[1;32m[Google Drive]\033[0m Checkpoints will be saved to: {checkpoint_dir}")
         except Exception as e:
-            print(f"\033[1;31m[Google Drive Error]\033[0m Failed to mount Google Drive: {e}")
+            print(f"\033[1;33m[Google Drive Notice]\033[0m Drive auto-mount skipped ({e}). Checkpoints saving locally to {checkpoint_dir}")
 
-    # Expose Colab port if running in Colab
+    # Expose Colab port if running in Colab (Embed Inline Frame)
     if in_colab:
         try:
             from google.colab import output
-            output.serve_kernel_port_as_window(args.port)
-            print(f"\033[1;36m[Colab Web UI Window]\033[0m Exposed port {args.port} for live dashboard monitor.")
+            try:
+                output.serve_kernel_port_as_iframe(args.port, height="650")
+                print(f"\033[1;36m[Colab Web UI]\033[0m Rendering Live Training Dashboard inline in Colab cell frame (Port {args.port}).")
+            except Exception:
+                output.serve_kernel_port_as_window(args.port)
+                print(f"\033[1;36m[Colab Web UI Window]\033[0m Exposed port {args.port} for live dashboard monitor.")
         except Exception as e:
             print(f"\033[1;33m[Colab Port Notice]\033[0m Port window notice: {e}")
 
