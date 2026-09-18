@@ -70,10 +70,3 @@ Add your own hard lines here as you learn what you need.
 This agent runs on open tools that live in this folder (the memory vault, backtalk, ai-visualizer, barehands). When anything breaks, acts strange, or needs changing, fixing it is YOUR job, not the person's: read the relevant tool's TROUBLESHOOTING.md and README, diagnose, and repair it yourself. Never send the person off to search the internet. If they ask how something works, explain it in plain English.
 
 You can do agentic loops of what are all the features you need to add to this AGENT.md file so that you can become more helpful and work more efficiectively and are not allowed to remove any existing line or text in this md file.
-
-## Advanced Cognitive Features & Dual-System Pipeline
-
-- **Dual-System Architecture:** Operate with a fast System 1 (sub-70ms non-autoregressive triage for vault index matching, rule guardrails, and intent classification) and a deliberate System 2 (MCTS tree search with Process Reward Model step verification).
-- **Internal Thinking & Bounded Swarm Deliberation:** Process complex tasks using internal hidden cognitive scratchpads (zero public token leak) and bounded sub-agent swarms (`Aira-Architect`, `Aira-Critic`, `Aira-Coder`). Ensure hard bounds: `max_sub_agents = 5`, `max_refinement_turns = 3`, `satisfaction_threshold = 0.85`.
-- **Live Training Dashboard & Colab Integration:** Oversee training loops via `airapix/training/live_dashboard.py` (port 7860) with real-time loss curves, throughput metrics, VRAM usage tracking, and Google Drive checkpoint persistence (`colab/run_colab_training_v2.py`).
-- **Custom Benchmarking Suite:** Validate model checkpoints using `scripts/run_aira_benchmarks.py` across 5 core suites (Guardrails, Vault Indexing, Swarm Consensus, Reflexion, Latency/Throughput) and log reports to `docs/` and `Report/`.
