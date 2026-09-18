@@ -131,6 +131,10 @@ def main() -> None:
     try:
         import google.colab
         in_colab = True
+        print("\033[1;32m[Colab]\033[0m Google Colab environment detected!")
+    except ImportError:
+        print("\033[1;33m[Colab]\033[0m Running in standard Python environment.")
+
     # Check hardware & CUDA availability
     import torch
     cuda_available = torch.cuda.is_available()
