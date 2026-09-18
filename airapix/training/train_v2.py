@@ -74,11 +74,18 @@ def run_aira_training_v2(
 
     GLOBAL_TRACKER.update(vram_total_gb=vram_total_gb, vram_used_gb=vram_used_gb)
 
-    # 3. Model Configuration
+    # 3. Model Configuration & VRAM Protection
+    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "1.5b"
+    
+    # Auto-scale preset if on 15GB T4 GPU to prevent CUDA OOM
+    if device == "cuda" and vram_total_gb <= 16.0 and target_preset in ["7b", "8b"]:
+        print(f"\033[1;33m[VRAM Auto-Scale]\033[0m Preset '{target_preset}' unquantized exceeds 15GB VRAM. Auto-scaling preset to '1.5b' (fp16) for Tesla T4 GPU.")
+        target_preset = "1.5b"
+
     cfg = config_from_preset(
-        preset if preset in ["tiny", "1.5b", "3b", "7b", "8b"] else "tiny",
+        target_preset,
         vocab_size=12000,
-        context_len=512 if device == "cpu" else 2048,
+        context_len=512 if device == "cpu" else 1024,
     )
 
     # In CPU simulation / test mode, use light config if CUDA is absent
@@ -87,9 +94,10 @@ def run_aira_training_v2(
         cfg.d_model = 256
         cfg.n_heads = 4
 
-    model = AiraForCausalLM(cfg).to(device)
+    dtype = torch.float16 if device == "cuda" else torch.float32
+    model = AiraForCausalLM(cfg).to(device=device, dtype=dtype)
     num_params = count_parameters(model)
-    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated: {num_params:,} parameters.")
+    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated on {device.upper()}: {num_params:,} parameters (Dtype: {dtype}).")
 
     # 4. Optimizer & LR Schedule
     optimizer = build_optimizer(
@@ -124,9 +132,14 @@ def run_aira_training_v2(
         input_ids = torch.randint(0, cfg.vocab_size, (batch_size, seq_len), device=device)
         labels = input_ids.clone()
 
-        # Forward pass
-        out = model(input_ids, labels=labels)
-        lm_loss = out["loss"]
+        # Forward pass with AMP Autocast
+        if device == "cuda":
+            with torch.cuda.amp.autocast(dtype=torch.float16):
+                out = model(input_ids, labels=labels)
+                lm_loss = out["loss"]
+        else:
+            out = model(input_ids, labels=labels)
+            lm_loss = out["loss"]
 
         # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
         sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
