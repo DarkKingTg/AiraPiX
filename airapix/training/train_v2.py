@@ -32,11 +32,12 @@ def run_aira_training_v2(
     dashboard_port: int = 7860,
     use_qlora: bool = True,
     load_in_4bit: bool = True,
+    load_in_8bit: bool = False,
     colab_mode: bool = False,
 ) -> None:
     """
     Enhanced Aira AI Training Loop v2 with Live Monitoring Web UI Dashboard.
-    Supports Colab T4/A100 GPUs, QLoRA 4-bit streaming, Dual-System loss, and live dashboard web server.
+    Supports Colab T4/A100 GPUs, QLoRA 4-bit/8-bit streaming, Dual-System loss, and live dashboard web server.
     """
     os.makedirs(checkpoint_dir, exist_ok=True)
     
@@ -82,6 +83,8 @@ def run_aira_training_v2(
         print(f"\033[1;33m[VRAM Protection]\033[0m Preset '{target_preset}' unquantized exceeds 15GB VRAM. Auto-scaling preset to '1.5b' (fp16) for Tesla T4 GPU.")
         print(f"\033[1;36m[QLoRA Tip]\033[0m Pass '--qlora' to train the full 8B model in 4-bit QLoRA mode (~9.5GB VRAM)!")
         target_preset = "1.5b"
+    elif load_in_8bit and target_preset in ["7b", "8b"]:
+        print(f"\033[1;32m[QLoRA 8-bit Mode]\033[0m Enabled 8-bit INT8 quantized fine-tuning for {target_preset.upper()} model preset (~13.8GB VRAM allocated).")
     elif use_qlora and target_preset in ["7b", "8b"]:
         print(f"\033[1;32m[QLoRA 4-bit Mode]\033[0m Enabled 4-bit NF4 quantized fine-tuning for {target_preset.upper()} model preset (~9.5GB VRAM allocated).")
 
@@ -318,7 +321,8 @@ def main() -> None:
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--colab", action="store_true", help="Enable Google Colab mode")
-    parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA 4-bit fine-tuning mode")
+    parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning mode")
+    parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Enable 8-bit quantization mode")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -328,6 +332,7 @@ def main() -> None:
         peak_lr=args.peak_lr,
         dashboard_port=args.port,
         use_qlora=args.qlora,
+        load_in_8bit=args.load_in_8bit,
         colab_mode=args.colab,
     )
 

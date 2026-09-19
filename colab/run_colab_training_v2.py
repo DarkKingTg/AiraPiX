@@ -119,7 +119,9 @@ def main() -> None:
     parser.add_argument("--mount-drive", action="store_true", help="Mount Google Drive for persistent checkpoints")
     parser.add_argument("--public-tunnel", action="store_true", default=True, help="Create a public internet URL for the dashboard")
     parser.add_argument("--load-in-4bit", action="store_true", default=True, help="Use 4-bit NF4 quantization streaming")
-    parser.add_argument("--use-qlora", action="store_true", default=True, help="Enable QLoRA training")
+    parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Use 8-bit quantization streaming")
+    parser.add_argument("--use-qlora", "--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning")
+    parser.add_argument("--colab", action="store_true", default=True, help="Colab mode indicator flag")
     args = parser.parse_args()
 
     print(f"\n\033[1;35m============================================================\033[0m")
