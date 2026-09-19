@@ -75,12 +75,15 @@ def run_aira_training_v2(
     GLOBAL_TRACKER.update(vram_total_gb=vram_total_gb, vram_used_gb=vram_used_gb)
 
     # 3. Model Configuration & VRAM Protection
-    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "1.5b"
+    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "8b"
     
-    # Auto-scale preset if on 15GB T4 GPU to prevent CUDA OOM
-    if device == "cuda" and vram_total_gb <= 16.0 and target_preset in ["7b", "8b"]:
-        print(f"\033[1;33m[VRAM Auto-Scale]\033[0m Preset '{target_preset}' unquantized exceeds 15GB VRAM. Auto-scaling preset to '1.5b' (fp16) for Tesla T4 GPU.")
+    # Auto-scale preset ONLY if unquantized (use_qlora is False) on 15GB T4 GPU to prevent CUDA OOM
+    if device == "cuda" and vram_total_gb <= 16.0 and target_preset in ["7b", "8b"] and not use_qlora:
+        print(f"\033[1;33m[VRAM Protection]\033[0m Preset '{target_preset}' unquantized exceeds 15GB VRAM. Auto-scaling preset to '1.5b' (fp16) for Tesla T4 GPU.")
+        print(f"\033[1;36m[QLoRA Tip]\033[0m Pass '--qlora' to train the full 8B model in 4-bit QLoRA mode (~9.5GB VRAM)!")
         target_preset = "1.5b"
+    elif use_qlora and target_preset in ["7b", "8b"]:
+        print(f"\033[1;32m[QLoRA 4-bit Mode]\033[0m Enabled 4-bit NF4 quantized fine-tuning for {target_preset.upper()} model preset (~9.5GB VRAM allocated).")
 
     cfg = config_from_preset(
         target_preset,
@@ -315,6 +318,7 @@ def main() -> None:
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--colab", action="store_true", help="Enable Google Colab mode")
+    parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA 4-bit fine-tuning mode")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -323,6 +327,7 @@ def main() -> None:
         batch_size=args.batch_size,
         peak_lr=args.peak_lr,
         dashboard_port=args.port,
+        use_qlora=args.qlora,
         colab_mode=args.colab,
     )
 
