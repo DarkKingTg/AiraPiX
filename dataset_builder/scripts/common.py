@@ -48,15 +48,18 @@ def ensure_dirs(*paths: Path) -> None:
 
 
 def iter_jsonl(path: str | Path) -> Iterable[dict[str, Any]]:
-    with Path(path).open("r", encoding="utf-8") as f:
-        for line_no, line in enumerate(f, start=1):
+    path_obj = Path(path)
+    if not path_obj.exists() or path_obj.stat().st_size == 0:
+        return
+    with path_obj.open("r", encoding="utf-8") as f:
+        for line in f:
             line = line.strip()
             if not line:
                 continue
             try:
                 yield json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"Invalid JSONL at {path}:{line_no}") from exc
+            except json.JSONDecodeError:
+                continue
 
 
 def write_jsonl(path: str | Path, rows: Iterable[dict[str, Any]]) -> int:

@@ -1,11 +1,14 @@
 model:
-  # RTX 2050 probe passed this preset at 1024 tokens. The measured parameter
-  # count is about 101M with the current architecture.
-  preset: 125m
+  preset: 3b
   vocab_size: 12000
   context_len: 1024
   dropout: 0.0
   gradient_checkpointing: true
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
 
 data:
   tokenizer_path: airapix/model/tokenizer/tokenizer.json
@@ -28,22 +31,21 @@ data:
   num_workers: 0
 
 training:
-  output_dir: runs/phase3_125m
+  output_dir: runs/rtx2050_3b_low_vram
   seed: 42
-  max_steps: 20000
-  micro_batch_size: 8
-  target_effective_batch_size: 64
-  eval_interval: 500
-  eval_batches: 50
+  max_steps: 5000
+  micro_batch_size: 1
+  target_effective_batch_size: 32
+  eval_interval: 200
+  eval_batches: 10
   checkpoint_interval: 500
-  early_stopping_patience: 5
   log_interval: 10
   precision: auto
   grad_clip_norm: 1.0
 
 optimizer:
   name: muon_adamw
-  peak_lr: 0.0004
+  peak_lr: 0.0003
   min_lr_ratio: 0.1
   warmup_fraction: 0.02
   weight_decay: 0.1
@@ -55,25 +57,7 @@ optimizer:
   adamw_lr_multiplier: 1.0
 
 probe:
-  presets: [125m, 90m, 60m]
-  micro_batch_sizes: [1, 2, 4, 8]
+  presets: [3b, 1.5b, 125m]
+  micro_batch_sizes: [1, 2]
   memory_limit_gb: 3.5
   steps: 3
-
-distillation:
-  teacher_model: Qwen/Qwen2.5-7B-Instruct
-  enabled: false
-  max_new_tokens: 512
-  temperature: 0.7
-  top_p: 0.9
-  load_in_4bit: true
-  device_map: auto
-
-regmix:
-  enabled: true
-  proxy_output_dir: runs/regmix_proxy
-  proxy_model_preset: tiny
-  proxy_steps: 1000
-  candidate_mixtures: 16
-  ridge_alpha: 0.1
-  categories: [text, chat, reasoning, code, tool_use]
