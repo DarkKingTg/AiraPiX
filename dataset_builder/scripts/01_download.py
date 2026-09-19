@@ -19,25 +19,32 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
 
     name = spec["name"]
     out_path = raw_dir / f"{name}.jsonl"
+    if out_path.exists() and out_path.stat().st_size > 0:
+        with out_path.open("r", encoding="utf-8") as f:
+            existing_count = sum(1 for line in f if line.strip())
+        print(f"[download] {name} already exists with {existing_count} rows. Skipping download.")
+        return {"name": name, "raw_path": str(out_path), "records": existing_count}
+
     kwargs = {
         "path": spec["hf_name"],
         "split": spec.get("split", "train"),
         "streaming": bool(spec.get("streaming", True)),
+        "trust_remote_code": True,
     }
     if spec.get("hf_config"):
         kwargs["name"] = spec["hf_config"]
 
-    max_retries = 5
+    max_retries = 3
     dataset = None
-    for attempt in range(1, max_retries + 1):
-        try:
+    try:
+        dataset = load_dataset(**kwargs)
+    except Exception as err:
+        if kwargs.get("streaming"):
+            print(f"  [streaming fallback] Streaming failed ({err}). Trying streaming=False...")
+            kwargs["streaming"] = False
             dataset = load_dataset(**kwargs)
-            break
-        except Exception as err:
-            if attempt == max_retries:
-                raise err
-            print(f"  [retry {attempt}/{max_retries}] Failed to connect to HF Hub ({err}). Retrying in {attempt * 3}s...")
-            time.sleep(attempt * 3)
+        else:
+            raise err
 
     sample_limit = spec.get("sample_limit")
     

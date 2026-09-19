@@ -154,7 +154,7 @@ datasets:
     streaming: true
     sample_limit: 20000
     category: tool_use
-    format: auto_text
+    format: hermes_tool
 
   # OASST1 needs thread reconstruction from message trees. Keep disabled until
   # the lighter sources have completed successfully.

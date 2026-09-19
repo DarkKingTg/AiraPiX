@@ -61,10 +61,31 @@ def normalize_record(row: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any
             input_text = get_field(row, fields.get("instruction", "instruction"))
             output_text = get_field(row, fields.get("output", "output"))
     elif fmt == "glaive_tool":
-        raw_input = get_field(row, fields.get("input", "system"))
-        raw_output = get_field(row, fields.get("output", "chat"))
-        input_text = normalize_space(raw_input)
-        output_text = normalize_space(raw_output)
+        system_text = normalize_space(get_field(row, fields.get("input", "system")))
+        chat_text = normalize_space(get_field(row, fields.get("output", "chat")))
+        if "ASSISTANT:" in chat_text:
+            parts = chat_text.split("ASSISTANT:", 1)
+            user_msg = parts[0].replace("USER:", "").strip()
+            assist_msg = parts[1].strip()
+            input_text = f"System: {system_text}\nUser: {user_msg}" if system_text else user_msg
+            output_text = assist_msg
+        else:
+            input_text = system_text
+            output_text = chat_text
+    elif fmt == "hermes_tool":
+        convs = row.get("conversations", [])
+        if isinstance(convs, list) and len(convs) >= 2:
+            input_parts = []
+            for m in convs[:-1]:
+                role = "User" if m.get("from") in {"human", "user"} else "Assistant"
+                val = normalize_space(str(m.get("value", "")))
+                if val:
+                    input_parts.append(f"{role}: {val}")
+            input_text = "\n".join(input_parts)
+            output_text = normalize_space(str(convs[-1].get("value", "")))
+        else:
+            input_text = get_field(row, fields.get("input"))
+            output_text = get_field(row, fields.get("output"))
     elif fmt == "auto_text":
         input_text = get_field(row, fields.get("input"))
         output_text = get_field(row, fields.get("output"))

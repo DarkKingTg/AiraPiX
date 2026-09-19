@@ -86,9 +86,17 @@ def run_aira_training_v2(
         cfg.d_model = 256
         cfg.n_heads = 4
 
-    model = AiraForCausalLM(cfg).to(device)
+    if device == "cuda":
+        use_bf16 = torch.cuda.is_bf16_supported()
+        dtype = torch.bfloat16 if use_bf16 else torch.float16
+    else:
+        dtype = torch.float32
+
+    scaler = torch.amp.GradScaler("cuda") if (device == "cuda" and dtype == torch.float16) else None
+
+    model = AiraForCausalLM(cfg).to(device=device, dtype=dtype)
     num_params = count_parameters(model)
-    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated: {num_params:,} parameters.")
+    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated: {num_params:,} parameters (Dtype: {dtype}).")
 
     # 4. Optimizer & LR Schedule
     optimizer = build_optimizer(
@@ -124,8 +132,13 @@ def run_aira_training_v2(
         labels = input_ids.clone()
 
         # Forward pass
-        out = model(input_ids, labels=labels)
-        lm_loss = out["loss"]
+        if device == "cuda":
+            with torch.amp.autocast("cuda", dtype=dtype):
+                out = model(input_ids, labels=labels)
+                lm_loss = out["loss"]
+        else:
+            out = model(input_ids, labels=labels)
+            lm_loss = out["loss"]
 
         # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
         sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
@@ -133,10 +146,21 @@ def run_aira_training_v2(
         total_loss = lm_loss
 
         # Backward & Step
-        total_loss.backward()
+        scaled_loss = total_loss / gradient_accumulation_steps
+        if scaler is not None:
+            scaler.scale(scaled_loss).backward()
+        else:
+            scaled_loss.backward()
+
         if step % gradient_accumulation_steps == 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            optimizer.step()
+            if scaler is not None:
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
             optimizer.zero_grad()
 
         # Metrics calculation
