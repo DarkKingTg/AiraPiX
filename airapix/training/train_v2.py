@@ -119,7 +119,7 @@ def run_aira_training_v2(
     sys.stdout.flush()
 
     # 3. Model Configuration & VRAM Protection Directives
-    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "125m"
+    target_preset = preset.lower() if preset.lower() in ["tiny", "60m", "90m", "125m", "400m", "1.5b", "3b", "7b", "8b"] else "125m"
     
     # Enforce strict preset scaling based on PHYSICAL VRAM limits (unless force_preset=True)
     if device == "cuda" and not force_preset:
@@ -461,7 +461,7 @@ def save_training_stat_plots(history: Dict[str, Any], output_dir: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Aira AI Training Loop v2 with Live Terminal & Dashboard")
-    parser.add_argument("--preset", type=str, default="1.5b", help="Model preset (125m, 1.5b, 3b, 7b, 8b)")
+    parser.add_argument("--preset", type=str, default="1.5b", help="Model preset (tiny, 60m, 90m, 125m, 400m, 1.5b, 3b, 7b, 8b)")
     parser.add_argument("--max-steps", type=int, default=1000, help="Maximum training steps")
     parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
