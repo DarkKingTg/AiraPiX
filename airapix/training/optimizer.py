@@ -10,20 +10,31 @@ def zeropower_via_newtonschulz5(update: torch.Tensor, steps: int = 5, eps: float
     if update.ndim != 2:
         return update
     original_dtype = update.dtype
-    x = update.float()
-    if x.size(0) > x.size(1):
-        x = x.T
-        transposed = True
-    else:
-        transposed = False
-    x = x / (x.norm() + eps)
-    a, b, c = 3.4445, -4.7750, 2.0315
-    for _ in range(steps):
-        xx_t = x @ x.T
-        x = a * x + (b * xx_t + c * (xx_t @ xx_t)) @ x
-    if transposed:
-        x = x.T
-    return x.to(dtype=original_dtype)
+    try:
+        x = update.float()
+        if not torch.isfinite(x).all():
+            x = torch.nan_to_num(x, nan=0.0, posinf=1.0, neginf=-1.0)
+        norm_val = x.norm()
+        if norm_val < eps:
+            return update
+        if x.size(0) > x.size(1):
+            x = x.T
+            transposed = True
+        else:
+            transposed = False
+        x = x / (norm_val + eps)
+        a, b, c = 3.4445, -4.7750, 2.0315
+        for _ in range(steps):
+            xx_t = x @ x.T
+            x = a * x + (b * xx_t + c * (xx_t @ xx_t)) @ x
+        if transposed:
+            x = x.T
+        res = x.to(dtype=original_dtype)
+        if not torch.isfinite(res).all():
+            return update
+        return res
+    except Exception:
+        return update
 
 
 class Muon(torch.optim.Optimizer):
