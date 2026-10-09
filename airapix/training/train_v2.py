@@ -8,6 +8,9 @@ import math
 from pathlib import Path
 from typing import Dict, Any, Optional
 
+# Enable PyTorch expandable segments to prevent CUDA memory fragmentation
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 
 # Add project root to sys.path
@@ -20,6 +23,33 @@ from airapix.training.schedule import cosine_with_warmup
 from airapix.training.live_dashboard import start_dashboard_server, GLOBAL_TRACKER
 
 
+def prevent_windows_sleep() -> None:
+    """Prevents Windows from entering sleep mode while training is active."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ES_CONTINUOUS = 0x80000000
+            ES_SYSTEM_REQUIRED = 0x00000001
+            ES_DISPLAY_REQUIRED = 0x00000002
+            ctypes.windll.kernel32.SetThreadExecutionState(
+                ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_DISPLAY_REQUIRED
+            )
+            print(f"\033[1;32m[Power Management]\033[0m Windows Sleep Mode disabled! Laptop will remain awake during training.")
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"\033[1;33m[Power Warning]\033[0m Could not set thread execution state: {e}")
+
+
+def restore_windows_sleep() -> None:
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ES_CONTINUOUS = 0x80000000
+            ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
+        except Exception:
+            pass
+
+
 def run_aira_training_v2(
     preset: str = "8b",
     max_steps: int = 1000,
@@ -28,23 +58,28 @@ def run_aira_training_v2(
     peak_lr: float = 3e-4,
     warmup_steps: int = 100,
     save_every: int = 200,
+    log_every: int = 1,
     checkpoint_dir: str = "runs/checkpoints",
     dashboard_port: int = 7860,
     use_qlora: bool = True,
     load_in_4bit: bool = True,
     load_in_8bit: bool = False,
     colab_mode: bool = False,
+    force_preset: bool = False,
 ) -> None:
     """
-    Enhanced Aira AI Training Loop v2 with Live Monitoring Web UI Dashboard.
+    Enhanced Aira AI Training Loop v2 with Real-Time Step-by-Step Terminal Stats & Live Dashboard.
     Supports Colab T4/A100 GPUs, QLoRA 4-bit/8-bit streaming, Dual-System loss, and live dashboard web server.
     """
     os.makedirs(checkpoint_dir, exist_ok=True)
     
+    # 0. Keep Windows Awake During Training
+    prevent_windows_sleep()
+    
     # 1. Launch Live Web UI Dashboard
-    print(f"\n============================================================")
-    print(f" AIRA AI DUAL-SYSTEM TRAINING LOOP v2 (COLAB OPTIMIZED)")
-    print(f"============================================================")
+    print(f"\n\033[1;36m========================================================================\033[0m")
+    print(f"\033[1;32m   AIRA AI DUAL-SYSTEM TRAINING LOOP v2 — LIVE TERMINAL & DASHBOARD     \033[0m")
+    print(f"\033[1;36m========================================================================\033[0m")
     try:
         server, thread = start_dashboard_server(port=dashboard_port)
         dashboard_url = f"http://localhost:{dashboard_port}"
@@ -53,9 +88,11 @@ def run_aira_training_v2(
             print(f"\033[1;32m[Colab Note]\033[0m Access via Colab port forwarding on port {dashboard_port}")
     except Exception as e:
         print(f"\033[1;33m[Dashboard Warning]\033[0m Could not start dashboard server: {e}")
+    sys.stdout.flush()
 
     GLOBAL_TRACKER.log_message("INFO", f"Initializing Aira model (Preset: {preset.upper()})...")
     GLOBAL_TRACKER.update(
+
         status="INITIALIZING MODEL",
         model_preset=preset.upper(),
         max_steps=max_steps,
@@ -63,35 +100,59 @@ def run_aira_training_v2(
 
     # 2. Check Device & GPU VRAM
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    vram_total_gb = 15.0
+    vram_total_gb = 4.0
+    vram_used_gb = 0.5
+    device_name = "CPU"
     if device == "cuda":
+        device_name = torch.cuda.get_device_name(0)
         vram_total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
         vram_used_gb = round(torch.cuda.memory_allocated(0) / (1024**3), 2)
-        print(f"[Hardware] GPU: {torch.cuda.get_device_name(0)} | Total VRAM: {vram_total_gb} GB")
+        print(f"\033[1;34m[Hardware]\033[0m Device: \033[1;33m{device_name}\033[0m | Total Dedicated VRAM: \033[1;33m{vram_total_gb:.2f} GB\033[0m")
+        # Restrict memory allocations strictly to dedicated GPU VRAM (prevent Windows shared sysmem thrashing)
+        try:
+            fraction = min(0.95, max(0.60, (vram_total_gb - 0.2) / vram_total_gb))
+            torch.cuda.set_per_process_memory_fraction(fraction, device=0)
+        except Exception as exc:
+            print(f"\033[1;33m[VRAM Fraction Notice]\033[0m {exc}")
     else:
-        vram_used_gb = 0.5
-        print(f"[Hardware] Device: CPU (Simulation Mode)")
-        print(f"\033[1;33m[Hardware Notice]\033[0m CUDA GPU not active in Colab! Enable GPU: Colab top menu -> Runtime -> Change runtime type -> T4 GPU")
+        print(f"\033[1;34m[Hardware]\033[0m Device: \033[1;33mCPU (Simulation / Test Mode)\033[0m")
+    sys.stdout.flush()
 
-    GLOBAL_TRACKER.update(vram_total_gb=vram_total_gb, vram_used_gb=vram_used_gb)
-
-    # 3. Model Configuration & VRAM Protection
-    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "8b"
+    # 3. Model Configuration & VRAM Protection Directives
+    target_preset = preset if preset in ["tiny", "60m", "90m", "125m", "1.5b", "3b", "7b", "8b"] else "125m"
     
-    # Auto-scale preset ONLY if unquantized (use_qlora is False) on 15GB T4 GPU to prevent CUDA OOM
-    if device == "cuda" and vram_total_gb <= 16.0 and target_preset in ["7b", "8b"] and not use_qlora:
-        print(f"\033[1;33m[VRAM Protection]\033[0m Preset '{target_preset}' unquantized exceeds 15GB VRAM. Auto-scaling preset to '1.5b' (fp16) for Tesla T4 GPU.")
-        print(f"\033[1;36m[QLoRA Tip]\033[0m Pass '--qlora' to train the full 8B model in 4-bit QLoRA mode (~9.5GB VRAM)!")
-        target_preset = "1.5b"
-    elif load_in_8bit and target_preset in ["7b", "8b"]:
-        print(f"\033[1;32m[QLoRA 8-bit Mode]\033[0m Enabled 8-bit INT8 quantized fine-tuning for {target_preset.upper()} model preset (~13.8GB VRAM allocated).")
-    elif use_qlora and target_preset in ["7b", "8b"]:
-        print(f"\033[1;32m[QLoRA 4-bit Mode]\033[0m Enabled 4-bit NF4 quantized fine-tuning for {target_preset.upper()} model preset (~9.5GB VRAM allocated).")
+    # Enforce strict preset scaling based on PHYSICAL VRAM limits (unless force_preset=True)
+    if device == "cuda" and not force_preset:
+        if vram_total_gb <= 4.5 and target_preset in ["1.5b", "3b", "7b", "8b"]:
+            print(f"\033[1;33m[Dedicated VRAM Directives]\033[0m Physical VRAM is {vram_total_gb:.2f} GB ({device_name}). Preset '{target_preset.upper()}' auto-scaled to '125M'. Use --force to override.")
+            target_preset = "125m"
+        elif vram_total_gb <= 8.5 and target_preset in ["3b", "7b", "8b"]:
+            print(f"\033[1;33m[Dedicated VRAM Directives]\033[0m Physical VRAM is {vram_total_gb:.2f} GB. Preset '{target_preset.upper()}' auto-scaled to '1.5B'. Use --force to override.")
+            target_preset = "1.5b"
+    elif force_preset:
+        print(f"\033[1;36m[Preset Directive]\033[0m Force flag enabled! Running preset '{target_preset.upper()}' as requested.")
 
+    # Low VRAM Optimization: Auto-tune micro-batch size and gradient accumulation
+    if device == "cuda" and vram_total_gb <= 4.5:
+        if batch_size > 1:
+            orig_bs = batch_size
+            batch_size = 1
+            gradient_accumulation_steps = gradient_accumulation_steps * orig_bs
+            print(f"\033[1;33m[Low VRAM Optimization]\033[0m 4GB VRAM detected. Micro-batch size auto-scaled: {orig_bs} -> {batch_size} (Grad Accum: {gradient_accumulation_steps}) to prevent CUDA OOM.")
+
+    GLOBAL_TRACKER.update(
+        vram_total_gb=vram_total_gb,
+        vram_used_gb=vram_used_gb,
+        device_name=device_name,
+        hardware_mode="Dedicated GDDR6 VRAM Mode" if device == "cuda" else "CPU Mode",
+        model_preset=target_preset.upper(),
+    )
+
+    context_len_val = 512 if (device == "cpu" or (device == "cuda" and vram_total_gb <= 4.5 and not force_preset)) else 1024
     cfg = config_from_preset(
         target_preset,
         vocab_size=12000,
-        context_len=512 if device == "cpu" else 1024,
+        context_len=context_len_val,
     )
 
     # In CPU simulation / test mode, use light config if CUDA is absent
@@ -110,6 +171,13 @@ def run_aira_training_v2(
 
     model = AiraForCausalLM(cfg).to(device=device, dtype=dtype)
     num_params = count_parameters(model)
+    
+    print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Dtype: \033[1;37m{dtype}\033[0m")
+    print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
+    print(f"\033[1;35m[Batch Spec]\033[0m Micro Batch: \033[1;37m{batch_size}\033[0m | Grad Accum: \033[1;37m{gradient_accumulation_steps}\033[0m | Effective Batch: \033[1;37m{batch_size * gradient_accumulation_steps}\033[0m | Context Len: \033[1;37m{cfg.context_len}\033[0m")
+    print(f"\033[1;36m------------------------------------------------------------------------\033[0m")
+    sys.stdout.flush()
+
     GLOBAL_TRACKER.log_message("INFO", f"Model instantiated on {device.upper()}: {num_params:,} parameters (Dtype: {dtype}).")
 
     # 4. Optimizer & LR Schedule
@@ -125,8 +193,46 @@ def run_aira_training_v2(
         },
     )
 
+    # 4. Dataset Stream Initialization
+    tokenizer_path = Path("airapix/model/tokenizer/tokenizer.json")
+    category_shards = {
+        "text": "dataset_builder/data/processed/train_text.jsonl",
+        "chat": "dataset_builder/data/processed/train_chat.jsonl",
+        "reasoning": "dataset_builder/data/processed/train_reasoning.jsonl",
+        "code": "dataset_builder/data/processed/train_code.jsonl",
+        "tool_use": "dataset_builder/data/processed/train_tool_use.jsonl",
+    }
+
+    data_loader = None
+    data_iter = None
+    if tokenizer_path.exists():
+        try:
+            from airapix.training.tokenizer import TokenizerWrapper
+            from airapix.training.dataset import MixtureJsonlDataset
+            from torch.utils.data import DataLoader
+
+            tokenizer = TokenizerWrapper(tokenizer_path)
+            mixture_weights = {"text": 0.34, "chat": 0.18, "reasoning": 0.20, "code": 0.16, "tool_use": 0.12}
+            dataset = MixtureJsonlDataset(
+                category_paths=category_shards,
+                weights=mixture_weights,
+                tokenizer=tokenizer,
+                context_len=cfg.context_len,
+                mask_prompt=True,
+            )
+            data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
+            data_iter = iter(data_loader)
+            print(f"\033[1;32m[Dataset Stream]\033[0m Loaded real dataset shards from 'dataset_builder/data/processed/' with prompt masking enabled!")
+            GLOBAL_TRACKER.log_message("INFO", "Real multi-category dataset stream successfully attached!")
+        except Exception as e:
+            print(f"\033[1;33m[Dataset Warning]\033[0m Could not load dataset stream: {e}. Falling back to synthetic batch generator.")
+            GLOBAL_TRACKER.log_message("WARN", f"Dataset load fallback: {e}")
+
     GLOBAL_TRACKER.update(status="TRAINING LIVE")
     GLOBAL_TRACKER.log_message("SUCCESS", f"Training started! Target steps: {max_steps}")
+
+    if device == "cuda":
+        torch.cuda.empty_cache()
 
     start_time = time.time()
     total_tokens_processed = 0
@@ -140,33 +246,51 @@ def run_aira_training_v2(
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        # Generate synthetic/batch input for step
+        # Fetch real batch input (or fallback)
         seq_len = cfg.context_len
-        input_ids = torch.randint(0, cfg.vocab_size, (batch_size, seq_len), device=device)
-        labels = input_ids.clone()
+        if data_iter is not None:
+            try:
+                batch = next(data_iter)
+            except StopIteration:
+                data_iter = iter(data_loader)
+                batch = next(data_iter)
+            input_ids = batch["input_ids"].to(device=device)
+            labels = batch["labels"].to(device=device)
+        else:
+            input_ids = torch.randint(0, cfg.vocab_size, (batch_size, seq_len), device=device)
+            labels = input_ids.clone()
 
-        # Forward pass with AMP Autocast
-        if device == "cuda":
-            with torch.amp.autocast("cuda", dtype=dtype):
+        # Forward pass & Backward pass with AMP Autocast and OOM protection
+        try:
+            if device == "cuda":
+                with torch.amp.autocast("cuda", dtype=dtype):
+                    out = model(input_ids, labels=labels)
+                    lm_loss = out["loss"]
+            else:
                 out = model(input_ids, labels=labels)
                 lm_loss = out["loss"]
-        else:
-            out = model(input_ids, labels=labels)
-            lm_loss = out["loss"]
 
-        # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
-        sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
-        sys2_loss = float(lm_loss.detach()) * 0.7 + 0.10
-        total_loss = lm_loss
+            # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
+            sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
+            sys2_loss = float(lm_loss.detach()) * 0.7 + 0.10
+            total_loss = lm_loss
 
-        # Backward & Step with loss scaling & accumulation division
-        scaled_loss = total_loss / gradient_accumulation_steps
-        if scaler is not None:
-            scaler.scale(scaled_loss).backward()
-        else:
-            scaled_loss.backward()
+            # Backward & Step with loss scaling & accumulation division
+            scaled_loss = total_loss / gradient_accumulation_steps
+            if scaler is not None:
+                scaler.scale(scaled_loss).backward()
+            else:
+                scaled_loss.backward()
+        except torch.OutOfMemoryError as oom_err:
+            if device == "cuda":
+                torch.cuda.empty_cache()
+            print(f"\033[1;31m[CUDA OOM Warning]\033[0m Step {step} CUDA out of memory: {oom_err}. Cleared VRAM cache, skipping step...")
+            GLOBAL_TRACKER.log_message("WARN", f"CUDA OOM at step {step}: cleared cache.")
+            optimizer.zero_grad(set_to_none=True)
+            continue
 
-        if step % gradient_accumulation_steps == 0:
+        is_grad_step = (step % gradient_accumulation_steps == 0) or (step == max_steps)
+        if is_grad_step:
             if scaler is not None:
                 scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -175,22 +299,31 @@ def run_aira_training_v2(
             else:
                 torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
                 optimizer.step()
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
+
+            # Periodically release cached allocations to free GPU memory dynamically
+            if device == "cuda":
+                torch.cuda.empty_cache()
 
         # Metrics calculation
         step_elapsed = time.time() - step_start
+        step_ms = step_elapsed * 1000.0
         tokens_this_step = batch_size * seq_len
         total_tokens_processed += tokens_this_step
         tokens_per_sec = tokens_this_step / max(step_elapsed, 1e-5)
 
         elapsed_total = time.time() - start_time
         steps_remaining = max_steps - step
-        eta_sec = int((elapsed_total / step) * steps_remaining)
+        avg_step_sec = elapsed_total / step
+        eta_sec = int(avg_step_sec * steps_remaining)
+        eta_str = time.strftime("%H:%M:%S", time.gmtime(eta_sec))
 
         if device == "cuda":
             vram_used_gb = round(torch.cuda.memory_allocated(0) / (1024**3), 2)
+            vram_res_gb = round(torch.cuda.memory_reserved(0) / (1024**3), 2)
         else:
             vram_used_gb = round(0.5 + (step % 10) * 0.05, 2)
+            vram_res_gb = vram_used_gb
 
         # Update Live Dashboard Tracker
         val_loss_sample = None
@@ -209,15 +342,24 @@ def run_aira_training_v2(
         )
         GLOBAL_TRACKER.update(elapsed_sec=int(elapsed_total), eta_sec=eta_sec)
 
-        # Logging to terminal
-        if step == 1 or step % 20 == 0 or step == max_steps:
+        # Step Logging to Terminal
+        if step == 1 or step % log_every == 0 or step == max_steps:
+            pct = (step / max_steps) * 100.0
+            grad_marker = "\033[1;32m[UPDATED]\033[0m" if is_grad_step else f"\033[1;30m[ACCUM {step % gradient_accumulation_steps}/{gradient_accumulation_steps}]\033[0m"
             msg = (
-                f"Step {step:4d}/{max_steps} | Loss: {float(lm_loss.detach()):.4f} | "
-                f"PPL: {math.exp(min(float(lm_loss.detach()), 20.0)):.2f} | "
-                f"LR: {lr:.2e} | Speed: {tokens_per_sec:6.1f} tok/s | VRAM: {vram_used_gb:.2f}GB"
+                f"\033[1;36m[Step {step:5d}/{max_steps} ({pct:5.1f}%)]\033[0m "
+                f"Loss: \033[1;37m{float(lm_loss.detach()):.4f}\033[0m | "
+                f"Sys1: \033[0;32m{sys1_loss:.3f}\033[0m | "
+                f"Sys2: \033[0;31m{sys2_loss:.3f}\033[0m | "
+                f"PPL: \033[1;33m{math.exp(min(float(lm_loss.detach()), 20.0)):6.2f}\033[0m | "
+                f"LR: \033[0;36m{lr:.2e}\033[0m | "
+                f"Speed: \033[1;32m{tokens_per_sec:6.1f} tok/s\033[0m ({step_ms:5.1f}ms) | "
+                f"VRAM: \033[1;33m{vram_used_gb:.2f}GB\033[0m/\033[0;33m{vram_res_gb:.2f}GB\033[0m | "
+                f"ETA: {eta_str} {grad_marker}"
             )
-            print(f"\033[36m[Train]\033[0m {msg}")
-            GLOBAL_TRACKER.log_message("STEP", msg)
+            print(msg)
+            sys.stdout.flush()
+            GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {float(lm_loss.detach()):.4f} | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
 
         # Checkpoint saving
         if step % save_every == 0 or step == max_steps:
@@ -234,6 +376,7 @@ def run_aira_training_v2(
             )
             ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {float(lm_loss.detach()):.4f})"
             print(f"\033[1;32m[Checkpoint]\033[0m {ckpt_msg}")
+            sys.stdout.flush()
             GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
             GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, float(lm_loss.detach()))
 
@@ -244,6 +387,7 @@ def run_aira_training_v2(
     GLOBAL_TRACKER.update(status="COMPLETED")
     GLOBAL_TRACKER.log_message("SUCCESS", f"Training completed successfully! Diagnostic plots exported to {plots_dir}")
     print(f"\n\033[1;32m[SUCCESS] Training finished in {int(time.time() - start_time)} seconds.\033[0m\n")
+    sys.stdout.flush()
 
 
 def save_training_stat_plots(history: Dict[str, Any], output_dir: str) -> None:
@@ -309,17 +453,21 @@ def save_training_stat_plots(history: Dict[str, Any], output_dir: str) -> None:
         plt.savefig(plot_path)
         plt.close(fig)
         print(f"\033[1;32m[Plot Export]\033[0m Saved high-res training stat graphs to: \033[1;36m{plot_path}\033[0m")
+        sys.stdout.flush()
     except Exception as e:
         print(f"[Plot Warning] Could not generate plots: {e}")
+        sys.stdout.flush()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Aira AI Training Loop v2 with Live Monitoring Dashboard")
-    parser.add_argument("--preset", type=str, default="8b", help="Model preset (1.5b, 3b, 7b, 8b)")
-    parser.add_argument("--max-steps", type=int, default=100, help="Maximum training steps")
+    parser = argparse.ArgumentParser(description="Aira AI Training Loop v2 with Live Terminal & Dashboard")
+    parser.add_argument("--preset", type=str, default="1.5b", help="Model preset (125m, 1.5b, 3b, 7b, 8b)")
+    parser.add_argument("--max-steps", type=int, default=1000, help="Maximum training steps")
     parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
+    parser.add_argument("--log-every", type=int, default=1, help="Steps frequency for terminal logging (default: 1 for every step)")
+    parser.add_argument("--force", action="store_true", help="Force preset selection without physical VRAM auto-scaling override")
     parser.add_argument("--colab", action="store_true", help="Enable Google Colab mode")
     parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning mode")
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Enable 8-bit quantization mode")
@@ -331,9 +479,11 @@ def main() -> None:
         batch_size=args.batch_size,
         peak_lr=args.peak_lr,
         dashboard_port=args.port,
+        log_every=args.log_every,
         use_qlora=args.qlora,
         load_in_8bit=args.load_in_8bit,
         colab_mode=args.colab,
+        force_preset=args.force,
     )
 
 

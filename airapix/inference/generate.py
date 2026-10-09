@@ -19,13 +19,18 @@ def load_model(checkpoint_path: str | Path | None, preset: str = "125m", device:
     
     if checkpoint_path and Path(checkpoint_path).is_file():
         print(f"[inference] Loading checkpoint from {checkpoint_path}")
-        state = torch.load(checkpoint_path, map_location=device, weights_only=True)
-        if "model_state" in state:
-            model.load_state_dict(state["model_state"])
+        try:
+            state = torch.load(checkpoint_path, map_location=device, weights_only=True)
+        except Exception:
+            state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+        if "model_state_dict" in state:
+            model.load_state_dict(state["model_state_dict"], strict=False)
+        elif "model_state" in state:
+            model.load_state_dict(state["model_state"], strict=False)
         elif "model" in state:
-            model.load_state_dict(state["model"])
+            model.load_state_dict(state["model"], strict=False)
         else:
-            model.load_state_dict(state)
+            model.load_state_dict(state, strict=False)
     else:
         print(f"[inference] No checkpoint found at {checkpoint_path}. Using initialized model architecture ({preset}).")
     
