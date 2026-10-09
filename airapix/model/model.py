@@ -6,14 +6,25 @@ import torch.nn.functional as F
 from torch.utils.checkpoint import checkpoint
 
 from .config import AiraConfig
-from .layers import DiagonalSSMMixer, MLAAttention, RMSNorm, SwiGLU
+from .layers import DeepSeekMoE, DiagonalSSMMixer, MLAAttention, RMSNorm, SwiGLU
 
 
 class AiraBlock(nn.Module):
+    """Single transformer block — either Mamba-2/SSD or MLA, with dense SwiGLU or MoE FFN.
+
+    The 3:1 interleaved schedule is handled by AiraConfig.layer_type():
+      Layers 0,1,2 → SSM;  Layer 3 → MLA;  Layers 4,5,6 → SSM;  Layer 7 → MLA; ...
+
+    MoE replaces dense SwiGLU only in upper layers (controlled by config.is_moe_layer).
+    """
+
     def __init__(self, config: AiraConfig, layer_idx: int) -> None:
         super().__init__()
         self.layer_idx = layer_idx
         self.kind = config.layer_type(layer_idx)
+        self.use_moe = config.is_moe_layer(layer_idx)
+
+        # Pre-norm 1 → Mixer
         self.norm1 = RMSNorm(config.d_model)
         if self.kind == "mla":
             self.mixer = MLAAttention(
@@ -25,6 +36,7 @@ class AiraBlock(nn.Module):
                 v_head_dim=config.v_head_dim,
                 rope_base=config.rope_base,
                 dropout=config.dropout,
+                use_qk_norm=config.use_qk_norm,
             )
         else:
             self.mixer = DiagonalSSMMixer(
@@ -33,16 +45,57 @@ class AiraBlock(nn.Module):
                 conv_kernel=config.ssm_conv_kernel,
                 dropout=config.dropout,
             )
-        self.norm2 = RMSNorm(config.d_model)
-        self.ffn = SwiGLU(config.d_model, hidden_mult=config.ffn_hidden_mult, dropout=config.dropout)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # Pre-norm 2 → FFN (dense SwiGLU or MoE)
+        self.norm2 = RMSNorm(config.d_model)
+        if self.use_moe:
+            self.ffn = DeepSeekMoE(
+                d_model=config.d_model,
+                hidden_mult=config.ffn_hidden_mult,
+                num_experts=config.moe_num_experts,
+                top_k=config.moe_top_k,
+                num_shared_experts=config.num_shared_experts,
+                dropout=config.dropout,
+            )
+        else:
+            self.ffn = SwiGLU(config.d_model, hidden_mult=config.ffn_hidden_mult, dropout=config.dropout)
+
+    def forward(self, x: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         x = x + self.mixer(self.norm1(x))
-        x = x + self.ffn(self.norm2(x))
-        return x
+        if self.use_moe:
+            ffn_out, aux_loss = self.ffn(self.norm2(x))
+            x = x + ffn_out
+        else:
+            x = x + self.ffn(self.norm2(x))
+            aux_loss = torch.tensor(0.0, device=x.device)
+        return x, aux_loss
+
+
+class MTPHead(nn.Module):
+    """Multi-Token Prediction auxiliary head.
+
+    Each MTP head predicts the (k+1)-th future token using a lightweight
+    shared-embedding projection. During training these provide denser
+    learning signals; at inference the heads serve as draft predictors
+    for speculative decoding.
+    """
+
+    def __init__(self, d_model: int, vocab_size: int) -> None:
+        super().__init__()
+        self.norm = RMSNorm(d_model)
+        self.proj = nn.Linear(d_model, vocab_size, bias=False)
+
+    def forward(self, hidden: torch.Tensor) -> torch.Tensor:
+        return self.proj(self.norm(hidden))
 
 
 class AiraForCausalLM(nn.Module):
+    """AiraPix v2 language model.
+
+    Architecture: 3:1 interleaved Mamba-2/SSD + MLA blocks, with
+    staged MoE in upper layers and multi-token prediction heads.
+    """
+
     def __init__(self, config: AiraConfig) -> None:
         super().__init__()
         self.config = config
@@ -52,6 +105,13 @@ class AiraForCausalLM(nn.Module):
         self.lm_head = nn.Linear(config.d_model, config.vocab_size, bias=False)
         if config.tie_embeddings:
             self.lm_head.weight = self.embed_tokens.weight
+
+        # Multi-Token Prediction heads
+        self.mtp_heads = nn.ModuleList([
+            MTPHead(config.d_model, config.vocab_size)
+            for _ in range(config.num_mtp_heads)
+        ]) if config.num_mtp_heads > 0 else nn.ModuleList()
+
         self.apply(self._init_weights)
 
     def _init_weights(self, module: nn.Module) -> None:
@@ -70,22 +130,47 @@ class AiraForCausalLM(nn.Module):
         if input_ids.size(1) > self.config.context_len:
             raise ValueError(f"Sequence length {input_ids.size(1)} exceeds context_len={self.config.context_len}")
         x = self.embed_tokens(input_ids)
+
+        total_aux_loss = torch.tensor(0.0, device=x.device)
         for block in self.blocks:
             if self.config.gradient_checkpointing and self.training:
-                x = checkpoint(block, x, use_reentrant=False)
+                x, aux = checkpoint(block, x, use_reentrant=False)
             else:
-                x = block(x)
+                x, aux = block(x)
+            total_aux_loss = total_aux_loss + aux
+
         x = self.norm(x)
         logits = self.lm_head(x)
+
         loss = None
         if labels is not None:
-            shift_logits = logits[:, :-1, :].contiguous()
-            shift_labels = labels[:, 1:].contiguous()
+            # Primary next-token loss
+            shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1))
+            shift_labels = labels[:, 1:].reshape(-1)
             loss = F.cross_entropy(
-                shift_logits.view(-1, shift_logits.size(-1)),
-                shift_labels.view(-1),
+                shift_logits,
+                shift_labels,
                 ignore_index=-100,
             )
+
+            # MTP auxiliary losses: predict token at position +2, +3, ...
+            for k, mtp_head in enumerate(self.mtp_heads, start=2):
+                if labels.size(1) > k:
+                    mtp_logits = mtp_head(x[:, :-k, :]).reshape(-1, logits.size(-1))
+                    mtp_labels = labels[:, k:].reshape(-1)
+                    mtp_loss = F.cross_entropy(
+                        mtp_logits,
+                        mtp_labels,
+                        ignore_index=-100,
+                    )
+                    loss = loss + 0.1 * mtp_loss
+                    del mtp_logits, mtp_labels
+
+            # Add MoE auxiliary load-balancing loss
+            num_moe_layers = sum(1 for b in self.blocks if b.use_moe)
+            if num_moe_layers > 0:
+                loss = loss + 0.01 * (total_aux_loss / num_moe_layers)
+
         return {"loss": loss, "logits": logits}
 
     @torch.no_grad()

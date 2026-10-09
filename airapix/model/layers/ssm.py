@@ -5,6 +5,42 @@ from torch import nn
 import torch.nn.functional as F
 
 
+# Fast PyTorch scan for SSM recurrence
+def _ssm_recurrent_scan(
+    dt_f: torch.Tensor,
+    a: torch.Tensor,
+    b_f: torch.Tensor,
+    c_f: torch.Tensor,
+    d_skip: torch.Tensor,
+    u_f: torch.Tensor,
+) -> torch.Tensor:
+    bsz = u_f.size(0)
+    seq_len = u_f.size(1)
+    dim = u_f.size(2)
+    decay_all = torch.exp(dt_f * a)
+    e_all = (1.0 - decay_all) * b_f
+    state = torch.zeros((bsz, dim), device=u_f.device, dtype=u_f.dtype)
+    outputs = torch.empty((bsz, seq_len, dim), device=u_f.device, dtype=u_f.dtype)
+
+    for i in range(seq_len):
+        state = decay_all[:, i, :] * state + e_all[:, i, :]
+        outputs[:, i, :] = c_f[:, i, :] * state + d_skip * u_f[:, i, :]
+
+    return outputs
+
+
+# Optional compilation only if requested explicitly via environment variable
+import os
+import sys
+
+_compiled_ssm_scan = None
+if os.environ.get("USE_TORCH_COMPILE", "0") == "1" and sys.platform != "win32":
+    try:
+        _compiled_ssm_scan = torch.compile(_ssm_recurrent_scan, mode="reduce-overhead")
+    except Exception:
+        _compiled_ssm_scan = None
+
+
 class DiagonalSSMMixer(nn.Module):
     """Pure-PyTorch diagonal SSM mixer.
 
@@ -49,21 +85,23 @@ class DiagonalSSMMixer(nn.Module):
         b_term = torch.tanh(self.b_proj(u))
         c_term = self.c_proj(u)
 
-        state = torch.zeros(bsz, self.inner_dim, device=x.device, dtype=torch.float32)
         a = -torch.exp(self.a_log.float()).view(1, self.inner_dim)
         d_skip = self.d_skip.float().view(1, self.inner_dim)
-        outputs = []
 
         u_f = u.float()
         dt_f = dt.float()
         b_f = b_term.float()
         c_f = c_term.float()
-        for idx in range(seq_len):
-            decay = torch.exp(dt_f[:, idx, :] * a)
-            state = decay * state + (1.0 - decay) * b_f[:, idx, :]
-            y = c_f[:, idx, :] * state + d_skip * u_f[:, idx, :]
-            outputs.append(y)
 
-        y = torch.stack(outputs, dim=1).to(dtype=x.dtype)
+        if _compiled_ssm_scan is not None and self.training and x.is_cuda:
+            try:
+                y = _compiled_ssm_scan(dt_f, a, b_f, c_f, d_skip, u_f).to(dtype=x.dtype)
+            except Exception:
+                y = _ssm_recurrent_scan(dt_f, a, b_f, c_f, d_skip, u_f).to(dtype=x.dtype)
+        else:
+            y = _ssm_recurrent_scan(dt_f, a, b_f, c_f, d_skip, u_f).to(dtype=x.dtype)
+
         y = y * F.silu(gate)
         return self.out_proj(self.dropout(y))
+
+
