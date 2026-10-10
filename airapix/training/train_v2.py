@@ -263,14 +263,21 @@ def run_aira_training_v2(
             except Exception as err:
                 print(f"\033[1;31m[Resume Error]\033[0m Could not load checkpoint: {err}. Starting from step 1.")
 
+    # Enable PyTorch Dynamo error suppression so missing Triton compiler safely falls back to Eager mode
+    if hasattr(torch, "_dynamo"):
+        torch._dynamo.config.suppress_errors = True
+
     # 4.2 JIT Triton Operator Fusion (torch.compile)
     if use_compile and hasattr(torch, "compile"):
         try:
+            import triton  # Check if Triton backend is installed (standard on Linux/Colab, optional on Windows)
             print("\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='reduce-overhead')...")
             model = torch.compile(model, mode="reduce-overhead")
-            GLOBAL_TRACKER.log_message("INFO", "Model compiled with torch.compile Inductor (mode='reduce-overhead').")
+            GLOBAL_TRACKER.log_message("INFO", "Model compiled with torch.compile Inductor.")
+        except ImportError:
+            print("\033[1;33m[Torch Compile Notice]\033[0m Triton compiler is not installed in this Windows Python environment. Running in high-performance Eager mode with TF32 Tensor Cores.")
         except Exception as comp_err:
-            print(f"\033[1;33m[Torch Compile Warning]\033[0m Compilation failed ({comp_err}); continuing in eager mode.")
+            print(f"\033[1;33m[Torch Compile Notice]\033[0m JIT compilation skipped ({comp_err}); running in Eager mode.")
 
     # 4.3 Dataset Stream Initialization
     tokenizer_path = Path("airapix/model/tokenizer/tokenizer.json")
