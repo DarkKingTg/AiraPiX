@@ -196,7 +196,9 @@ def run_aira_training_v2(
         cfg.n_heads = 4
 
     if device == "cuda":
-        use_bf16 = torch.cuda.is_bf16_supported()
+        # Check physical GPU compute capability (sm_80+ for Ampere/L4/A100, sm_75 for Turing T4)
+        major_cap, _ = torch.cuda.get_device_capability()
+        use_bf16 = (major_cap >= 8) and torch.cuda.is_bf16_supported()
         dtype = torch.bfloat16 if use_bf16 else torch.float16
     else:
         dtype = torch.float32
