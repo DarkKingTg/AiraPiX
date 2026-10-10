@@ -199,17 +199,19 @@ def run_aira_training_v2(
         # Check physical GPU compute capability (sm_80+ for Ampere/L4/A100, sm_75 for Turing T4)
         major_cap, _ = torch.cuda.get_device_capability()
         use_bf16 = (major_cap >= 8) and torch.cuda.is_bf16_supported()
-        dtype = torch.bfloat16 if use_bf16 else torch.float16
+        model_dtype = torch.bfloat16 if use_bf16 else torch.float32
+        amp_dtype = torch.bfloat16 if use_bf16 else torch.float16
     else:
-        dtype = torch.float32
+        model_dtype = torch.float32
+        amp_dtype = torch.float32
 
     # Direct AMP autocast handling (GradScaler not needed for FP16/BF16 with Muon)
     scaler = None
 
-    model = AiraForCausalLM(cfg).to(device=device, dtype=dtype)
+    model = AiraForCausalLM(cfg).to(device=device, dtype=model_dtype)
     num_params = count_parameters(model)
     
-    print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Dtype: \033[1;37m{dtype}\033[0m")
+    print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Master Dtype: \033[1;37m{model_dtype}\033[0m | AMP Dtype: \033[1;37m{amp_dtype}\033[0m")
     print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
     tokens_per_optimizer_step = batch_size * gradient_accumulation_steps * cfg.context_len
     print(f"\033[1;35m[Batch Spec]\033[0m Micro Batch: \033[1;37m{batch_size}\033[0m | Grad Accum: \033[1;37m{gradient_accumulation_steps}\033[0m | Tokens/Step: \033[1;32m{tokens_per_optimizer_step:,} tokens ({tokens_per_optimizer_step/1000:.1f}k)\033[0m | Context Len: \033[1;37m{cfg.context_len}\033[0m")
@@ -373,7 +375,7 @@ def run_aira_training_v2(
         # Forward pass & Backward pass with AMP Autocast and OOM protection
         try:
             if device == "cuda":
-                with torch.amp.autocast("cuda", dtype=dtype):
+                with torch.amp.autocast("cuda", dtype=amp_dtype):
                     out = model(input_ids, labels=labels)
                     lm_loss = out["loss"]
             else:
