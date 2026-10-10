@@ -63,7 +63,7 @@ class DeepSeekMoE(nn.Module):
                 idx = (expert_indices == i).nonzero(as_tuple=True)[0]
                 if idx.numel() > 0:
                     expert_tokens = x_flat[idx]
-                    expert_output = self.experts[i](expert_tokens.unsqueeze(1)).squeeze(1)
+                    expert_output = self.experts[i](expert_tokens)
                     res = (expert_output * topk_weights[idx, 0:1]).to(dtype=routed_out.dtype)
                     routed_out[idx] = res
         else:
@@ -74,7 +74,7 @@ class DeepSeekMoE(nn.Module):
                     idx = (expert_indices == i).nonzero(as_tuple=True)[0]
                     if idx.numel() > 0:
                         expert_tokens = x_flat[idx]
-                        expert_output = self.experts[i](expert_tokens.unsqueeze(1)).squeeze(1)
+                        expert_output = self.experts[i](expert_tokens)
                         res = (expert_output * weight_k[idx]).to(dtype=routed_out.dtype)
                         routed_out[idx] += res
 
