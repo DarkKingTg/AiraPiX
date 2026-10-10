@@ -297,6 +297,7 @@ def run_aira_training_v2(
                 weights=mixture_weights,
                 tokenizer=tokenizer,
                 context_len=cfg.context_len,
+                seed=random.randint(1, 1000000),
                 mask_prompt=True,
             )
             # Fast pinned memory DataLoader for async CPU-to-GPU DMA transfers
@@ -331,14 +332,26 @@ def run_aira_training_v2(
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        # Fetch real batch input (or fallback) with async non-blocking GPU transfer
+        # Fetch real batch input with robust dataset stream auto-recovery
         seq_len = cfg.context_len
         if data_iter is not None:
             try:
                 batch = next(data_iter)
-            except StopIteration:
-                data_iter = iter(data_loader)
-                batch = next(data_iter)
+            except Exception as fetch_err:
+                print(f"\033[1;33m[Dataset Notice]\033[0m Dataset iterator refresh (Step {step}): {fetch_err}. Re-attaching stream...")
+                try:
+                    data_iter = iter(data_loader)
+                    batch = next(data_iter)
+                except Exception as stream_err:
+                    print(f"\033[1;31m[Dataset Warning]\033[0m Re-creating DataLoader instance: {stream_err}")
+                    data_loader = DataLoader(
+                        dataset, 
+                        batch_size=batch_size, 
+                        num_workers=0 if os.name == "nt" else 2, 
+                        pin_memory=(device == "cuda")
+                    )
+                    data_iter = iter(data_loader)
+                    batch = next(data_iter)
             input_ids = batch["input_ids"].to(device=device, non_blocking=True)
             labels = batch["labels"].to(device=device, non_blocking=True)
         else:
