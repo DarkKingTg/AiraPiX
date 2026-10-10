@@ -203,7 +203,8 @@ def run_aira_training_v2(
     else:
         dtype = torch.float32
 
-    scaler = torch.amp.GradScaler("cuda") if (device == "cuda" and dtype == torch.float16) else None
+    # Direct AMP autocast handling (GradScaler not needed for FP16/BF16 with Muon)
+    scaler = None
 
     model = AiraForCausalLM(cfg).to(device=device, dtype=dtype)
     num_params = count_parameters(model)
