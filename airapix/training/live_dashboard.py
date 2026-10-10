@@ -360,7 +360,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <div class="header-right">
             <div class="filter-group">
                 <button class="btn-filter active" onclick="setZoom('all')" id="btn-zoom-all">All Steps</button>
-                <button class="btn-filter" onclick="setZoom(100)" id="btn-zoom-100">Last 100</button>
+                <button class="btn-filter" onclick="setZoom('ema')" id="btn-zoom-ema">Smoothed Trend (EMA)</button>
+                <button class="btn-filter" onclick="setZoom(500)" id="btn-zoom-500">Last 500</button>
+                <button class="btn-filter" onclick="setZoom(200)" id="btn-zoom-200">Last 200</button>
                 <button class="btn-filter" onclick="setZoom(50)" id="btn-zoom-50">Last 50</button>
             </div>
             <div class="status-badge" id="status-badge">
@@ -424,8 +426,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         <!-- Chart 1: Loss Trajectory & Val Loss -->
         <div class="chart-card">
             <div class="chart-header">
-                <span>1. Loss Trajectory Curve</span>
-                <span class="badge">Cross Entropy</span>
+                <span>1. Dynamic Loss Trajectory</span>
+                <span class="badge">Adaptive EMA + Cross-Entropy</span>
             </div>
             <div class="chart-wrapper">
                 <canvas id="lossChart"></canvas>
@@ -507,9 +509,52 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             currentZoom = mode;
             document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
             if(mode === 'all') document.getElementById('btn-zoom-all').classList.add('active');
-            if(mode === 100) document.getElementById('btn-zoom-100').classList.add('active');
+            if(mode === 'ema') document.getElementById('btn-zoom-ema').classList.add('active');
+            if(mode === 500) document.getElementById('btn-zoom-500').classList.add('active');
+            if(mode === 200) document.getElementById('btn-zoom-200').classList.add('active');
             if(mode === 50) document.getElementById('btn-zoom-50').classList.add('active');
             fetchMetrics();
+        }
+
+        function calculateEMA(data, alpha = 0.12) {
+            if (!data || data.length === 0) return [];
+            let ema = [data[0]];
+            for (let i = 1; i < data.length; i++) {
+                let val = typeof data[i] === 'number' && isFinite(data[i]) ? data[i] : ema[i - 1];
+                ema.push(Number((alpha * val + (1 - alpha) * ema[i - 1]).toFixed(4)));
+            }
+            return ema;
+        }
+
+        function subsampleSeries(steps, values, targetPoints = 150) {
+            if (!steps || steps.length <= targetPoints) return { steps: steps || [], values: values || [] };
+            const stepSize = Math.ceil(steps.length / targetPoints);
+            const subSteps = [];
+            const subValues = [];
+            for (let i = 0; i < steps.length; i += stepSize) {
+                const chunkSteps = steps.slice(i, i + stepSize);
+                const chunkValues = values.slice(i, i + stepSize).filter(v => typeof v === 'number' && isFinite(v));
+                if (chunkValues.length > 0) {
+                    const avgVal = chunkValues.reduce((a, b) => a + b, 0) / chunkValues.length;
+                    subSteps.push(chunkSteps[chunkSteps.length - 1]);
+                    subValues.push(Number(avgVal.toFixed(4)));
+                }
+            }
+            return { steps: subSteps, values: subValues };
+        }
+
+        function adaptYAxis(chart, values, axisID = 'y') {
+            if (!values || values.length === 0) return;
+            const valid = values.filter(v => typeof v === 'number' && isFinite(v) && v > 0);
+            if (valid.length > 0) {
+                const minV = Math.min(...valid);
+                const maxV = Math.max(...valid);
+                const margin = (maxV - minV) * 0.12 || 0.5;
+                if (chart.options.scales[axisID]) {
+                    chart.options.scales[axisID].min = Math.max(0, Number((minV - margin).toFixed(2)));
+                    chart.options.scales[axisID].max = Number((maxV + margin).toFixed(2));
+                }
+            }
         }
 
         const commonOptions = {
@@ -532,13 +577,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             }
         };
 
-        // 1. Loss Chart
+        // 1. Loss Chart with Dynamic EMA & Raw Datasets
         const lossChart = new Chart(document.getElementById('lossChart').getContext('2d'), {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [
-                    { label: 'Training Loss', borderColor: '#00F2FE', backgroundColor: 'rgba(0, 242, 254, 0.08)', data: [], fill: true, tension: 0.25, borderWidth: 2 },
+                    { label: 'Smoothed Trend (EMA)', borderColor: '#00F2FE', backgroundColor: 'rgba(0, 242, 254, 0.12)', data: [], fill: true, tension: 0.3, borderWidth: 2.5, pointRadius: 0 },
+                    { label: 'Raw Loss (Points)', borderColor: 'rgba(59, 130, 246, 0.25)', backgroundColor: 'transparent', data: [], tension: 0.1, borderWidth: 1, pointRadius: 1 },
                     { label: 'Val Loss', borderColor: '#F59E0B', backgroundColor: '#F59E0B', data: [], pointRadius: 5, showLine: false }
                 ]
             },
@@ -551,9 +597,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             data: {
                 labels: [],
                 datasets: [
-                    { label: 'System 1 (Triage)', borderColor: '#10B981', data: [], tension: 0.25, borderWidth: 2 },
-                    { label: 'System 2 (PRM)', borderColor: '#EF4444', data: [], tension: 0.25, borderWidth: 2 },
-                    { label: 'LM Total Loss', borderColor: '#3B82F6', borderDash: [4, 4], data: [], tension: 0.25, borderWidth: 1.5 }
+                    { label: 'System 1 (Triage)', borderColor: '#10B981', data: [], tension: 0.25, borderWidth: 2, pointRadius: 0 },
+                    { label: 'System 2 (PRM)', borderColor: '#EF4444', data: [], tension: 0.25, borderWidth: 2, pointRadius: 0 },
+                    { label: 'LM Loss Trend', borderColor: '#3B82F6', borderDash: [4, 4], data: [], tension: 0.25, borderWidth: 1.5, pointRadius: 0 }
                 ]
             },
             options: commonOptions
@@ -564,7 +610,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{ label: 'Learning Rate', borderColor: '#A855F7', backgroundColor: 'rgba(168, 85, 247, 0.12)', data: [], fill: true, tension: 0.3, borderWidth: 2 }]
+                datasets: [{ label: 'Learning Rate', borderColor: '#A855F7', backgroundColor: 'rgba(168, 85, 247, 0.12)', data: [], fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
             },
             options: commonOptions
         });
@@ -574,7 +620,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             type: 'line',
             data: {
                 labels: [],
-                datasets: [{ label: 'Perplexity (PPL)', borderColor: '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.08)', data: [], fill: true, tension: 0.3, borderWidth: 2 }]
+                datasets: [{ label: 'Smoothed Perplexity', borderColor: '#F59E0B', backgroundColor: 'rgba(245, 158, 11, 0.08)', data: [], fill: true, tension: 0.3, borderWidth: 2, pointRadius: 0 }]
             },
             options: commonOptions
         });
@@ -585,8 +631,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             data: {
                 labels: [],
                 datasets: [
-                    { label: 'Tok/sec', borderColor: '#10B981', data: [], yAxisID: 'y' },
-                    { label: 'VRAM (GB)', borderColor: '#EC4899', data: [], yAxisID: 'y1' }
+                    { label: 'Tok/sec', borderColor: '#10B981', data: [], yAxisID: 'y', pointRadius: 0 },
+                    { label: 'VRAM (GB)', borderColor: '#EC4899', data: [], yAxisID: 'y1', pointRadius: 0 }
                 ]
             },
             options: {
@@ -684,7 +730,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     mixtureChart.update('none');
                 }
 
-                // Update History Charts with Zoom Filter
+                // Update History Charts with Dynamic Downsampling & Auto-Zoom
                 if (data.history && data.history.steps.length > 0) {
                     let steps = data.history.steps;
                     let loss = data.history.loss;
@@ -695,6 +741,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                     let tok_s = data.history.tokens_per_sec;
                     let vram = data.history.vram_used_gb;
 
+                    // Slice step window based on selected zoom mode
                     if (typeof currentZoom === 'number') {
                         const cut = Math.max(0, steps.length - currentZoom);
                         steps = steps.slice(cut);
@@ -707,38 +754,71 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                         vram = vram.slice(cut);
                     }
 
-                    // 1. Loss
-                    lossChart.data.labels = steps;
-                    lossChart.data.datasets[0].data = loss;
+                    // Compute EMA Smoothed Loss & Perplexity
+                    const emaLoss = calculateEMA(loss, 0.12);
+                    const emaPpl = calculateEMA(ppl, 0.12);
+
+                    // Dynamic Subsampling for Large Step Runs
+                    let displaySteps = steps;
+                    let displayLoss = loss;
+                    let displayEmaLoss = emaLoss;
+                    let displaySys1 = sys1;
+                    let displaySys2 = sys2;
+                    let displayLr = lr;
+                    let displayPpl = emaPpl;
+                    let displayTokS = tok_s;
+                    let displayVram = vram;
+
+                    if (currentZoom === 'all' && steps.length > 200) {
+                        const subLoss = subsampleSeries(steps, emaLoss, 150);
+                        displaySteps = subLoss.steps;
+                        displayEmaLoss = subLoss.values;
+                        displayLoss = subsampleSeries(steps, loss, 150).values;
+                        displaySys1 = subsampleSeries(steps, sys1, 150).values;
+                        displaySys2 = subsampleSeries(steps, sys2, 150).values;
+                        displayLr = subsampleSeries(steps, lr, 150).values;
+                        displayPpl = subsampleSeries(steps, emaPpl, 150).values;
+                        displayTokS = subsampleSeries(steps, tok_s, 150).values;
+                        displayVram = subsampleSeries(steps, vram, 150).values;
+                    }
+
+                    // 1. Loss Chart
+                    lossChart.data.labels = displaySteps;
+                    lossChart.data.datasets[0].data = displayEmaLoss;
+                    lossChart.data.datasets[1].data = displayLoss;
                     if (data.history.val_loss && data.history.val_loss.length > 0) {
-                        lossChart.data.datasets[1].data = steps.map(s => {
+                        lossChart.data.datasets[2].data = displaySteps.map(s => {
                             const match = data.history.val_loss.find(v => v.step === s);
                             return match ? match.val_loss : null;
                         });
                     }
+                    adaptYAxis(lossChart, displayEmaLoss);
                     lossChart.update('none');
 
-                    // 2. Dual Sys
-                    dualSysChart.data.labels = steps;
-                    dualSysChart.data.datasets[0].data = sys1;
-                    dualSysChart.data.datasets[1].data = sys2;
-                    dualSysChart.data.datasets[2].data = loss;
+                    // 2. Dual Sys Chart
+                    dualSysChart.data.labels = displaySteps;
+                    dualSysChart.data.datasets[0].data = displaySys1;
+                    dualSysChart.data.datasets[1].data = displaySys2;
+                    dualSysChart.data.datasets[2].data = displayEmaLoss;
+                    adaptYAxis(dualSysChart, displaySys2);
                     dualSysChart.update('none');
 
-                    // 3. LR
-                    lrChart.data.labels = steps;
-                    lrChart.data.datasets[0].data = lr;
+                    // 3. LR Chart
+                    lrChart.data.labels = displaySteps;
+                    lrChart.data.datasets[0].data = displayLr;
                     lrChart.update('none');
 
-                    // 4. PPL
-                    pplChart.data.labels = steps;
-                    pplChart.data.datasets[0].data = ppl;
+                    // 4. PPL Chart
+                    pplChart.data.labels = displaySteps;
+                    pplChart.data.datasets[0].data = displayPpl;
+                    adaptYAxis(pplChart, displayPpl);
                     pplChart.update('none');
 
-                    // 5. Perf
-                    perfChart.data.labels = steps;
-                    perfChart.data.datasets[0].data = tok_s;
-                    perfChart.data.datasets[1].data = vram;
+                    // 5. Perf Chart
+                    perfChart.data.labels = displaySteps;
+                    perfChart.data.datasets[0].data = displayTokS;
+                    perfChart.data.datasets[1].data = displayVram;
+                    adaptYAxis(perfChart, displayTokS, 'y');
                     perfChart.update('none');
                 }
 

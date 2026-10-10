@@ -26,12 +26,17 @@ def zeropower_via_newtonschulz5(update: torch.Tensor, steps: int = 5, eps: float
         a, b, c = 3.4445, -4.7750, 2.0315
         for _ in range(steps):
             xx_t = x @ x.T
+            if not torch.isfinite(xx_t).all():
+                return update / (norm_val + eps)
+            xx_t = xx_t.clamp(min=-50.0, max=50.0)
             x = a * x + (b * xx_t + c * (xx_t @ xx_t)) @ x
+            if not torch.isfinite(x).all():
+                return update / (norm_val + eps)
         if transposed:
             x = x.T
         res = x.to(dtype=original_dtype)
         if not torch.isfinite(res).all():
-            return update
+            return update / (norm_val + eps)
         return res
     except Exception:
         return update
