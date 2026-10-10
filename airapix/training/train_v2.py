@@ -416,12 +416,18 @@ def run_aira_training_v2(
         if is_grad_step:
             if scaler is not None:
                 scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                scaler.step(optimizer)
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                if torch.isfinite(grad_norm):
+                    scaler.step(optimizer)
+                else:
+                    print(f"\033[1;33m[Grad Notice]\033[0m Step {step} non-finite gradient norm ({grad_norm}); skipping optimizer step.")
                 scaler.update()
             else:
-                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                if torch.isfinite(grad_norm):
+                    optimizer.step()
+                else:
+                    print(f"\033[1;33m[Grad Notice]\033[0m Step {step} non-finite gradient norm ({grad_norm}); skipping weight update.")
             optimizer.zero_grad(set_to_none=True)
 
             # Periodically release cached allocations to free GPU memory dynamically

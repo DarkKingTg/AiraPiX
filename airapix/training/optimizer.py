@@ -83,15 +83,18 @@ class Muon(torch.optim.Optimizer):
                     p.mul_(1.0 - lr * weight_decay)
                 state = self.state[p]
                 if "momentum_buffer" not in state:
-                    state["momentum_buffer"] = torch.zeros_like(p)
+                    state["momentum_buffer"] = torch.zeros_like(p, dtype=torch.float32)
                 buf = state["momentum_buffer"]
-                buf.mul_(momentum).add_(grad)
-                update = grad.add(buf, alpha=momentum) if nesterov else buf
+                grad_f32 = grad.float()
+                if not torch.isfinite(grad_f32).all():
+                    grad_f32 = torch.nan_to_num(grad_f32, nan=0.0, posinf=1.0, neginf=-1.0)
+                buf.mul_(momentum).add_(grad_f32)
+                update = grad_f32.add(buf, alpha=momentum) if nesterov else buf
                 if update.ndim == 2:
                     update = zeropower_via_newtonschulz5(update, steps=ns_steps)
                     scale = math.sqrt(max(1.0, update.size(0) / max(1, update.size(1))))
                     update = update * scale
-                p.add_(update, alpha=-lr)
+                p.add_(update.to(dtype=p.dtype), alpha=-lr)
         return loss
 
 
