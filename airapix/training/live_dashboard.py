@@ -364,6 +364,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 <button class="btn-filter" onclick="setZoom(500)" id="btn-zoom-500">Last 500</button>
                 <button class="btn-filter" onclick="setZoom(200)" id="btn-zoom-200">Last 200</button>
                 <button class="btn-filter" onclick="setZoom(50)" id="btn-zoom-50">Last 50</button>
+                <button class="btn-filter" onclick="setZoom(10)" id="btn-zoom-10">Last 10</button>
+                <button class="btn-filter" onclick="setZoom(5)" id="btn-zoom-5">Last 5</button>
             </div>
             <div class="status-badge" id="status-badge">
                 <span class="status-dot"></span>
@@ -513,6 +515,8 @@ DASHBOARD_HTML = """<!DOCTYPE html>
             if(mode === 500) document.getElementById('btn-zoom-500').classList.add('active');
             if(mode === 200) document.getElementById('btn-zoom-200').classList.add('active');
             if(mode === 50) document.getElementById('btn-zoom-50').classList.add('active');
+            if(mode === 10) document.getElementById('btn-zoom-10').classList.add('active');
+            if(mode === 5) document.getElementById('btn-zoom-5').classList.add('active');
             fetchMetrics();
         }
 
