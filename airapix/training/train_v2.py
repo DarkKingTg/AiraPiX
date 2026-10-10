@@ -87,6 +87,7 @@ def run_aira_training_v2(
     force_preset: bool = False,
     resume_from: str | None = None,
     context_len: int | None = None,
+    use_compile: bool = False,
 ) -> None:
     """
     Enhanced Aira AI Training Loop v2 with Real-Time Step-by-Step Terminal Stats & Live Dashboard.
@@ -128,6 +129,14 @@ def run_aira_training_v2(
         vram_total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
         vram_used_gb = round(torch.cuda.memory_allocated(0) / (1024**3), 2)
         print(f"\033[1;34m[Hardware]\033[0m Device: \033[1;33m{device_name}\033[0m | Total Dedicated VRAM: \033[1;33m{vram_total_gb:.2f} GB\033[0m")
+        
+        # Squeeze max hardware performance: Enable Ampere/Hopper TF32 Tensor Cores & CuDNN auto-tuner
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
+        if hasattr(torch, "set_float32_matmul_precision"):
+            torch.set_float32_matmul_precision("high")
+
         try:
             fraction = min(0.95, max(0.60, (vram_total_gb - 0.2) / vram_total_gb))
             torch.cuda.set_per_process_memory_fraction(fraction, device=0)
@@ -253,7 +262,16 @@ def run_aira_training_v2(
             except Exception as err:
                 print(f"\033[1;31m[Resume Error]\033[0m Could not load checkpoint: {err}. Starting from step 1.")
 
-    # 4.2 Dataset Stream Initialization
+    # 4.2 JIT Triton Operator Fusion (torch.compile)
+    if use_compile and hasattr(torch, "compile"):
+        try:
+            print("\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='reduce-overhead')...")
+            model = torch.compile(model, mode="reduce-overhead")
+            GLOBAL_TRACKER.log_message("INFO", "Model compiled with torch.compile Inductor (mode='reduce-overhead').")
+        except Exception as comp_err:
+            print(f"\033[1;33m[Torch Compile Warning]\033[0m Compilation failed ({comp_err}); continuing in eager mode.")
+
+    # 4.3 Dataset Stream Initialization
     tokenizer_path = Path("airapix/model/tokenizer/tokenizer.json")
     category_shards = {
         "text": "dataset_builder/data/processed/train_text.jsonl",
@@ -281,10 +299,16 @@ def run_aira_training_v2(
                 context_len=cfg.context_len,
                 mask_prompt=True,
             )
-            data_loader = DataLoader(dataset, batch_size=batch_size, num_workers=0)
+            # Fast pinned memory DataLoader for async CPU-to-GPU DMA transfers
+            data_loader = DataLoader(
+                dataset, 
+                batch_size=batch_size, 
+                num_workers=0 if os.name == "nt" else 2, 
+                pin_memory=(device == "cuda")
+            )
             data_iter = iter(data_loader)
-            print(f"\033[1;32m[Dataset Stream]\033[0m Loaded real dataset shards from 'dataset_builder/data/processed/' with prompt masking enabled!")
-            GLOBAL_TRACKER.log_message("INFO", "Real multi-category dataset stream successfully attached!")
+            print(f"\033[1;32m[Dataset Stream]\033[0m Loaded real dataset shards with async pinned memory DMA transfers!")
+            GLOBAL_TRACKER.log_message("INFO", "Real multi-category dataset stream attached with pinned memory DMA.")
         except Exception as e:
             print(f"\033[1;33m[Dataset Warning]\033[0m Could not load dataset stream: {e}. Falling back to synthetic batch generator.")
             GLOBAL_TRACKER.log_message("WARN", f"Dataset load fallback: {e}")
@@ -307,7 +331,7 @@ def run_aira_training_v2(
         for param_group in optimizer.param_groups:
             param_group["lr"] = lr
 
-        # Fetch real batch input (or fallback)
+        # Fetch real batch input (or fallback) with async non-blocking GPU transfer
         seq_len = cfg.context_len
         if data_iter is not None:
             try:
@@ -315,8 +339,8 @@ def run_aira_training_v2(
             except StopIteration:
                 data_iter = iter(data_loader)
                 batch = next(data_iter)
-            input_ids = batch["input_ids"].to(device=device)
-            labels = batch["labels"].to(device=device)
+            input_ids = batch["input_ids"].to(device=device, non_blocking=True)
+            labels = batch["labels"].to(device=device, non_blocking=True)
         else:
             input_ids = torch.randint(0, cfg.vocab_size, (batch_size, seq_len), device=device)
             labels = input_ids.clone()
@@ -549,6 +573,7 @@ def main() -> None:
     parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning mode")
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Enable 8-bit quantization mode")
     parser.add_argument("--resume", type=str, nargs="?", const="latest", default=None, help="Resume training from a checkpoint file path or 'latest' for auto-resume")
+    parser.add_argument("--compile", action="store_true", help="Enable torch.compile JIT Triton kernel fusion for max throughput")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -565,6 +590,7 @@ def main() -> None:
         force_preset=args.force,
         resume_from=args.resume,
         context_len=args.context_len,
+        use_compile=args.compile,
     )
 
 
