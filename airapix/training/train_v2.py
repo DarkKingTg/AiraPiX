@@ -271,9 +271,10 @@ def run_aira_training_v2(
     if use_compile and hasattr(torch, "compile"):
         try:
             import triton  # Check if Triton backend is installed (standard on Linux/Colab, optional on Windows)
-            print("\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='reduce-overhead')...")
-            model = torch.compile(model, mode="reduce-overhead")
-            GLOBAL_TRACKER.log_message("INFO", "Model compiled with torch.compile Inductor.")
+            compile_mode = "default" if gradient_accumulation_steps > 1 else "reduce-overhead"
+            print(f"\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='{compile_mode}')...")
+            model = torch.compile(model, mode=compile_mode)
+            GLOBAL_TRACKER.log_message("INFO", f"Model compiled with torch.compile Inductor (mode='{compile_mode}').")
         except ImportError:
             print("\033[1;33m[Torch Compile Notice]\033[0m Triton compiler is not installed in this Windows Python environment. Running in high-performance Eager mode with TF32 Tensor Cores.")
         except Exception as comp_err:
