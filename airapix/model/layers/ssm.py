@@ -5,7 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 
 
-# Fast PyTorch scan for SSM recurrence
+# Ultra-fast vectorized PyTorch scan for SSM recurrence using parallel cumsum
 def _ssm_recurrent_scan(
     dt_f: torch.Tensor,
     a: torch.Tensor,
@@ -14,18 +14,17 @@ def _ssm_recurrent_scan(
     d_skip: torch.Tensor,
     u_f: torch.Tensor,
 ) -> torch.Tensor:
-    bsz = u_f.size(0)
-    seq_len = u_f.size(1)
-    dim = u_f.size(2)
+    # 1. Compute per-step decay and input terms
     decay_all = torch.exp(dt_f * a)
-    e_all = (1.0 - decay_all) * b_f
-    state = torch.zeros((bsz, dim), device=u_f.device, dtype=u_f.dtype)
-    outputs = torch.empty((bsz, seq_len, dim), device=u_f.device, dtype=u_f.dtype)
-
-    for i in range(seq_len):
-        state = decay_all[:, i, :] * state + e_all[:, i, :]
-        outputs[:, i, :] = c_f[:, i, :] * state + d_skip * u_f[:, i, :]
-
+    e_all = (1.0 - decay_all) * b_f * u_f
+    
+    # 2. Vectorized 1st-order linear recurrence via cumulative log-decay
+    log_decay = torch.cumsum(dt_f * a, dim=1)
+    log_decay_clamped = log_decay.clamp(min=-60.0, max=60.0)
+    exp_neg_log = torch.exp(-log_decay_clamped)
+    
+    state = torch.exp(log_decay_clamped) * torch.cumsum(exp_neg_log * e_all, dim=1)
+    outputs = c_f * state + d_skip * u_f
     return outputs
 
 

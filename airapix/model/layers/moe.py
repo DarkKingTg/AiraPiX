@@ -50,7 +50,7 @@ class DeepSeekMoE(nn.Module):
         router_logits = self.router(x_flat)
         routing_weights = F.softmax(router_logits, dim=-1)
         topk_weights, topk_indices = torch.topk(routing_weights, self.top_k, dim=-1)
-        topk_weights = (topk_weights / topk_weights.sum(dim=-1, keepdim=True)).to(dtype=x_flat.dtype)
+        topk_weights = (topk_weights / (topk_weights.sum(dim=-1, keepdim=True) + 1e-6)).to(dtype=x_flat.dtype)
 
         me = routing_weights.mean(dim=0)
         ce = (F.one_hot(topk_indices[:, 0], num_classes=self.num_experts).to(dtype=me.dtype)).mean(dim=0)

@@ -147,29 +147,39 @@ class AiraForCausalLM(nn.Module):
             # Primary next-token loss
             shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1))
             shift_labels = labels[:, 1:].reshape(-1)
-            loss = F.cross_entropy(
-                shift_logits,
-                shift_labels,
-                ignore_index=-100,
-            )
+            valid_mask = (shift_labels != -100)
+            if valid_mask.sum() > 0:
+                loss = F.cross_entropy(
+                    shift_logits,
+                    shift_labels,
+                    ignore_index=-100,
+                )
+            else:
+                loss = torch.tensor(0.0, device=x.device, requires_grad=True)
 
             # MTP auxiliary losses: predict token at position +2, +3, ...
             for k, mtp_head in enumerate(self.mtp_heads, start=2):
                 if labels.size(1) > k:
                     mtp_logits = mtp_head(x[:, :-k, :]).reshape(-1, logits.size(-1))
                     mtp_labels = labels[:, k:].reshape(-1)
-                    mtp_loss = F.cross_entropy(
-                        mtp_logits,
-                        mtp_labels,
-                        ignore_index=-100,
-                    )
-                    loss = loss + 0.1 * mtp_loss
+                    mtp_mask = (mtp_labels != -100)
+                    if mtp_mask.sum() > 0:
+                        mtp_loss = F.cross_entropy(
+                            mtp_logits,
+                            mtp_labels,
+                            ignore_index=-100,
+                        )
+                        if torch.isfinite(mtp_loss):
+                            loss = loss + 0.1 * mtp_loss
                     del mtp_logits, mtp_labels
 
             # Add MoE auxiliary load-balancing loss
             num_moe_layers = sum(1 for b in self.blocks if b.use_moe)
-            if num_moe_layers > 0:
+            if num_moe_layers > 0 and torch.isfinite(total_aux_loss):
                 loss = loss + 0.01 * (total_aux_loss / num_moe_layers)
+
+            if not torch.isfinite(loss):
+                loss = torch.tensor(0.0, device=x.device, requires_grad=True)
 
         return {"loss": loss, "logits": logits}
 

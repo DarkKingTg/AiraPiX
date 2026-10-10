@@ -1,10 +1,24 @@
 from __future__ import annotations
 
+import math
 import json
 import threading
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from typing import Dict, Any, List, Optional
+
+
+def _sanitize_val(v: Any) -> Any:
+    """Recursively replaces NaN, Inf, and -Inf float values with valid JSON numbers (0.0)."""
+    if isinstance(v, float):
+        if math.isnan(v) or math.isinf(v):
+            return 0.0
+        return v
+    elif isinstance(v, dict):
+        return {k: _sanitize_val(val) for k, val in v.items()}
+    elif isinstance(v, list):
+        return [_sanitize_val(val) for val in v]
+    return v
 
 
 class MetricsTracker:
@@ -61,29 +75,37 @@ class MetricsTracker:
 
     def record_step(self, step: int, loss: float, lr: float, tokens_per_sec: float, vram_used_gb: float, sys1_loss: float = 0.0, sys2_loss: float = 0.0, val_loss: Optional[float] = None) -> None:
         with self._lock:
-            ppl = round(2.71828 ** min(loss, 20.0), 2)
+            safe_loss = 0.0 if (math.isnan(loss) or math.isinf(loss)) else float(loss)
+            safe_lr = 0.0 if (math.isnan(lr) or math.isinf(lr)) else float(lr)
+            safe_tps = 0.0 if (math.isnan(tokens_per_sec) or math.isinf(tokens_per_sec)) else float(tokens_per_sec)
+            safe_vram = 0.0 if (math.isnan(vram_used_gb) or math.isinf(vram_used_gb)) else float(vram_used_gb)
+            safe_sys1 = 0.0 if (math.isnan(sys1_loss) or math.isinf(sys1_loss)) else float(sys1_loss)
+            safe_sys2 = 0.0 if (math.isnan(sys2_loss) or math.isinf(sys2_loss)) else float(sys2_loss)
+
+            ppl = round(2.71828 ** min(safe_loss, 20.0), 2)
             self.state["step"] = step
-            self.state["loss"] = round(loss, 4)
+            self.state["loss"] = round(safe_loss, 4)
             self.state["perplexity"] = ppl
-            self.state["lr"] = lr
-            self.state["tokens_per_sec"] = round(tokens_per_sec, 1)
-            self.state["vram_used_gb"] = round(vram_used_gb, 2)
-            self.state["sys1_loss"] = round(sys1_loss, 4)
-            self.state["sys2_loss"] = round(sys2_loss, 4)
+            self.state["lr"] = safe_lr
+            self.state["tokens_per_sec"] = round(safe_tps, 1)
+            self.state["vram_used_gb"] = round(safe_vram, 2)
+            self.state["sys1_loss"] = round(safe_sys1, 4)
+            self.state["sys2_loss"] = round(safe_sys2, 4)
 
             hist = self.state["history"]
             hist["steps"].append(step)
-            hist["loss"].append(round(loss, 4))
+            hist["loss"].append(round(safe_loss, 4))
             hist["perplexity"].append(ppl)
-            hist["lr"].append(lr)
-            hist["tokens_per_sec"].append(round(tokens_per_sec, 1))
-            hist["vram_used_gb"].append(round(vram_used_gb, 2))
-            hist["sys1_loss"].append(round(sys1_loss, 4))
-            hist["sys2_loss"].append(round(sys2_loss, 4))
+            hist["lr"].append(safe_lr)
+            hist["tokens_per_sec"].append(round(safe_tps, 1))
+            hist["vram_used_gb"].append(round(safe_vram, 2))
+            hist["sys1_loss"].append(round(safe_sys1, 4))
+            hist["sys2_loss"].append(round(safe_sys2, 4))
 
             if val_loss is not None:
-                self.state["val_loss"] = round(val_loss, 4)
-                hist["val_loss"].append({"step": step, "val_loss": round(val_loss, 4)})
+                safe_val = 0.0 if (math.isnan(val_loss) or math.isinf(val_loss)) else float(val_loss)
+                self.state["val_loss"] = round(safe_val, 4)
+                hist["val_loss"].append({"step": step, "val_loss": round(safe_val, 4)})
 
             # Limit history length to 500 points
             if len(hist["steps"]) > 500:
@@ -109,16 +131,18 @@ class MetricsTracker:
 
     def add_checkpoint(self, path: str, step: int, loss: float) -> None:
         with self._lock:
+            safe_loss = 0.0 if (math.isnan(loss) or math.isinf(loss)) else float(loss)
             self.state["checkpoints"].append({
                 "step": step,
                 "path": path,
-                "loss": round(loss, 4),
+                "loss": round(safe_loss, 4),
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             })
 
     def get_snapshot(self) -> Dict[str, Any]:
         with self._lock:
-            return json.loads(json.dumps(self.state))
+            sanitized = _sanitize_val(self.state)
+            return json.loads(json.dumps(sanitized))
 
 
 # Global metrics tracker instance
@@ -387,11 +411,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
 
     <!-- Summary Analytical Pills -->
     <div class="analytics-pill-bar">
-        <div class="pill-stat">🏆 Lowest Loss: <strong id="stat-min-loss">N/A</strong></div>
-        <div class="pill-stat">⚡ Peak Speed: <strong id="stat-max-speed">N/A</strong></div>
-        <div class="pill-stat">📊 Loss Delta (50 steps): <strong id="stat-loss-delta">N/A</strong></div>
-        <div class="pill-stat">💾 Peak VRAM: <strong id="stat-peak-vram">N/A</strong></div>
-        <div class="pill-stat">⚙️ Hardware: <strong id="stat-hw-mode">GPU Mode</strong></div>
+        <div class="pill-stat"> Lowest Loss: <strong id="stat-min-loss">N/A</strong></div>
+        <div class="pill-stat"> Peak Speed: <strong id="stat-max-speed">N/A</strong></div>
+        <div class="pill-stat"> Loss Delta (50 steps): <strong id="stat-loss-delta">N/A</strong></div>
+        <div class="pill-stat"> Peak VRAM: <strong id="stat-peak-vram">N/A</strong></div>
+        <div class="pill-stat"> Hardware: <strong id="stat-hw-mode">GPU Mode</strong></div>
     </div>
 
     <!-- 6 Graphical Analysis Charts -->
@@ -602,19 +626,21 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 const data = await res.json();
 
                 // Top Metrics Cards
-                document.getElementById('status-text').innerText = data.status;
-                document.getElementById('val-step').innerText = `${data.step} / ${data.max_steps}`;
-                document.getElementById('val-loss').innerText = data.loss.toFixed(4);
-                document.getElementById('val-perplexity').innerText = `Perplexity: ${data.perplexity}`;
-                document.getElementById('val-throughput').innerText = `${data.tokens_per_sec} tok/s`;
+                document.getElementById('status-text').innerText = data.status || 'UNKNOWN';
+                document.getElementById('val-step').innerText = `${data.step || 0} / ${data.max_steps || 0}`;
+                document.getElementById('val-loss').innerText = (typeof data.loss === 'number' && isFinite(data.loss)) ? data.loss.toFixed(4) : '0.0000';
+                document.getElementById('val-perplexity').innerText = `Perplexity: ${data.perplexity ?? 0}`;
+                document.getElementById('val-throughput').innerText = `${data.tokens_per_sec ?? 0} tok/s`;
                 if (data.model_preset) {
                     const hwStr = data.device_name ? `${data.device_name} — Dedicated VRAM` : 'Dedicated VRAM Mode';
                     document.getElementById('model-preset-label').innerText = `Hybrid MLA + SSM Dual-System Architecture (${data.model_preset} Preset — ${hwStr})`;
                 }
-                document.getElementById('val-vram').innerText = `${data.vram_used_gb} GB`;
-                document.getElementById('val-vram-sub').innerText = `Total Dedicated VRAM: ${data.vram_total_gb} GB`;
-                document.getElementById('val-lr').innerText = data.lr.toExponential(2);
-                document.getElementById('val-sys-loss').innerText = `${data.sys1_loss.toFixed(3)} / ${data.sys2_loss.toFixed(3)}`;
+                document.getElementById('val-vram').innerText = `${data.vram_used_gb ?? 0} GB`;
+                document.getElementById('val-vram-sub').innerText = `Total Dedicated VRAM: ${data.vram_total_gb ?? 0} GB`;
+                document.getElementById('val-lr').innerText = (typeof data.lr === 'number' && isFinite(data.lr)) ? data.lr.toExponential(2) : '0.00e+0';
+                const sys1 = (typeof data.sys1_loss === 'number' && isFinite(data.sys1_loss)) ? data.sys1_loss.toFixed(3) : '0.000';
+                const sys2 = (typeof data.sys2_loss === 'number' && isFinite(data.sys2_loss)) ? data.sys2_loss.toFixed(3) : '0.000';
+                document.getElementById('val-sys-loss').innerText = `${sys1} / ${sys2}`;
 
                 // Progress Bar
                 const pct = data.max_steps > 0 ? (data.step / data.max_steps) * 100 : 0;
@@ -628,18 +654,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
                 }
 
                 // Analytics Summary Bar
-                if (data.history && data.history.loss.length > 0) {
-                    const minL = Math.min(...data.history.loss);
-                    const maxS = Math.max(...data.history.tokens_per_sec);
-                    const peakV = Math.max(...data.history.vram_used_gb);
+                if (data.history && data.history.loss && data.history.loss.length > 0) {
+                    const validLosses = data.history.loss.filter(v => typeof v === 'number' && isFinite(v));
+                    const validSpeeds = data.history.tokens_per_sec.filter(v => typeof v === 'number' && isFinite(v));
+                    const validVram = data.history.vram_used_gb.filter(v => typeof v === 'number' && isFinite(v));
+
+                    const minL = validLosses.length > 0 ? Math.min(...validLosses) : 0;
+                    const maxS = validSpeeds.length > 0 ? Math.max(...validSpeeds) : 0;
+                    const peakV = validVram.length > 0 ? Math.max(...validVram) : 0;
+
                     document.getElementById('stat-min-loss').innerText = minL.toFixed(4);
                     document.getElementById('stat-max-speed').innerText = `${maxS.toFixed(1)} tok/s`;
                     document.getElementById('stat-peak-vram').innerText = `${peakV.toFixed(2)} GB`;
                     document.getElementById('stat-hw-mode').innerText = data.hardware_mode || 'Dedicated VRAM Mode';
 
-                    if (data.history.loss.length >= 50) {
-                        const first50 = data.history.loss[data.history.loss.length - 50];
-                        const lastL = data.history.loss[data.history.loss.length - 1];
+                    if (validLosses.length >= 50) {
+                        const first50 = validLosses[validLosses.length - 50];
+                        const lastL = validLosses[validLosses.length - 1];
                         const delta = lastL - first50;
                         const sign = delta <= 0 ? '' : '+';
                         document.getElementById('stat-loss-delta').innerText = `${sign}${delta.toFixed(4)}`;
@@ -751,12 +782,15 @@ class DashboardRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
             self.wfile.write(DASHBOARD_HTML.encode("utf-8"))
+        elif self.path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
         elif self.path == "/api/metrics":
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
-            snapshot = GLOBAL_TRACKER.get_snapshot()
+            snapshot = _sanitize_val(GLOBAL_TRACKER.get_snapshot())
             self.wfile.write(json.dumps(snapshot).encode("utf-8"))
         else:
             self.send_response(404)
@@ -791,3 +825,25 @@ def start_dashboard_server(port: int = 7860) -> tuple[HTTPServer, threading.Thre
     heartbeat_thread.start()
     
     return server, thread
+
+
+if __name__ == "__main__":
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(description="AiraPix Standalone Live Training Dashboard Web Server")
+    parser.add_argument("--port", type=int, default=5000, help="Port to run the dashboard server on (default: 5000)")
+    args = parser.parse_args()
+
+    port = args.port
+    server = HTTPServer(("0.0.0.0", port), DashboardRequestHandler)
+    print(f"\n========================================================================")
+    print(f"  AIRA AI STANDALONE LIVE DASHBOARD WEB SERVER RUNNING ON PORT {port}")
+    print(f"  Access Dashboard UI: http://localhost:{port}")
+    print(f"========================================================================\n")
+    sys.stdout.flush()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping dashboard server...")
+        server.server_close()

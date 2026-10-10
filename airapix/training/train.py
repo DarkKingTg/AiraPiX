@@ -209,16 +209,29 @@ def run_aira_training(
             lm_loss = out["loss"]
 
         # Dual-System Loss terms
-        sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
-        sys2_loss = float(lm_loss.detach()) * 0.7 + 0.10
-        total_loss = lm_loss
-
-        # Backward & Step with loss scaling & accumulation division
-        scaled_loss = total_loss / gradient_accumulation_steps
-        if scaler is not None:
-            scaler.scale(scaled_loss).backward()
+        raw_loss_val = float(lm_loss.detach())
+        if math.isnan(raw_loss_val) or math.isinf(raw_loss_val):
+            print(f"\033[1;33m[Loss Warning]\033[0m Step {step} detected NaN/Inf loss. Skipping backward step.")
+            GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss NaN/Inf; skipping step.")
+            optimizer.zero_grad(set_to_none=True)
+            lm_loss_val = 0.0
+            sys1_loss = 0.0
+            sys2_loss = 0.0
         else:
-            scaled_loss.backward()
+            lm_loss_val = raw_loss_val
+            sys1_loss = lm_loss_val * 0.3 + 0.05
+            sys2_loss = lm_loss_val * 0.7 + 0.10
+
+        total_loss = lm_loss
+        if torch.isfinite(total_loss) and lm_loss_val > 0.0:
+            # Backward & Step with loss scaling & accumulation division
+            scaled_loss = total_loss / gradient_accumulation_steps
+            if scaler is not None:
+                scaler.scale(scaled_loss).backward()
+            else:
+                scaled_loss.backward()
+        else:
+            optimizer.zero_grad(set_to_none=True)
 
         if step % gradient_accumulation_steps == 0:
             if scaler is not None:
@@ -249,11 +262,11 @@ def run_aira_training(
         # Update Live Dashboard Tracker
         val_loss_sample = None
         if step % 50 == 0:
-            val_loss_sample = float(lm_loss.detach()) + 0.08
+            val_loss_sample = lm_loss_val + 0.08
 
         GLOBAL_TRACKER.record_step(
             step=step,
-            loss=float(lm_loss.detach()),
+            loss=lm_loss_val,
             lr=lr,
             tokens_per_sec=tokens_per_sec,
             vram_used_gb=vram_used_gb,
@@ -265,9 +278,10 @@ def run_aira_training(
 
         # Logging to terminal
         if step == 1 or step % 20 == 0 or step == max_steps:
+            safe_ppl = math.exp(min(lm_loss_val, 20.0))
             msg = (
-                f"Step {step:4d}/{max_steps} | Loss: {float(lm_loss.detach()):.4f} | "
-                f"PPL: {math.exp(min(float(lm_loss.detach()), 20.0)):.2f} | "
+                f"Step {step:4d}/{max_steps} | Loss: {lm_loss_val:.4f} | "
+                f"PPL: {safe_ppl:.2f} | "
                 f"LR: {lr:.2e} | Speed: {tokens_per_sec:6.1f} tok/s | VRAM: {vram_used_gb:.2f}GB"
             )
             print(f"\033[36m[Train]\033[0m {msg}")
@@ -281,15 +295,15 @@ def run_aira_training(
                     "step": step,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": float(lm_loss.detach()),
+                    "loss": lm_loss_val,
                     "config": cfg,
                 },
                 ckpt_path,
             )
-            ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {float(lm_loss.detach()):.4f})"
+            ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {lm_loss_val:.4f})"
             print(f"\033[1;32m[Checkpoint]\033[0m {ckpt_msg}")
             GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
-            GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, float(lm_loss.detach()))
+            GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, lm_loss_val)
 
     # Export Training Diagnostic Graphs
     plots_dir = os.path.join(checkpoint_dir, "plots")

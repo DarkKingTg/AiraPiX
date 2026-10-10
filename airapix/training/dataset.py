@@ -45,6 +45,7 @@ def encode_for_lm(
     Encodes an example for causal language modeling.
     If mask_prompt=True and prompt_text is non-empty, prompt tokens are masked with -100
     so loss is only computed over the target assistant response tokens.
+    Intelligently preserves response tokens even for long prompts to prevent zero-target loss drops.
     """
     if isinstance(example, str):
         prompt_text, response_text = "", example
@@ -54,11 +55,24 @@ def encode_for_lm(
     if mask_prompt and prompt_text:
         prompt_ids = tokenizer.encode(prompt_text)
         response_ids = tokenizer.encode(response_text)
+
+        if response_ids:
+            # Ensure at least min_response_len tokens are reserved for the target response
+            min_resp_reserve = min(len(response_ids), max(64, context_len // 2))
+            max_prompt_len = max(32, context_len - min_resp_reserve)
+            if len(prompt_ids) > max_prompt_len:
+                # Truncate prompt from the left to keep the most recent context/instruction
+                prompt_ids = prompt_ids[-max_prompt_len:]
+
         full_ids = prompt_ids + response_ids
         full_ids = full_ids[:context_len]
 
         num_prompt_tokens = min(len(prompt_ids), len(full_ids))
         labels = [-100] * num_prompt_tokens + list(full_ids[num_prompt_tokens:])
+
+        # Safety Fallback: if all labels were masked (e.g. empty response), calculate loss over full sequence
+        if not any(lbl != -100 for lbl in labels):
+            labels = list(full_ids)
 
         if len(full_ids) < context_len:
             pad_count = context_len - len(full_ids)
@@ -74,6 +88,7 @@ def encode_for_lm(
             labels.extend([-100] * pad_count)
 
     return torch.tensor(full_ids, dtype=torch.long), torch.tensor(labels, dtype=torch.long)
+
 
 
 class JsonlLMDataset(Dataset):

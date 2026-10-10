@@ -33,11 +33,22 @@ def normalize_record(row: dict[str, Any], spec: dict[str, Any]) -> dict[str, Any
         input_text = ""
         output_text = get_field(row, fields.get("output", "text"))
     elif fmt == "instruction_response":
-        input_text = join_prompt(
-            get_field(row, fields.get("instruction", "instruction")),
-            get_field(row, fields.get("context", "input")),
-        )
-        output_text = get_field(row, fields.get("output", "output"))
+        if "conversations" in row and isinstance(row["conversations"], list) and len(row["conversations"]) >= 2:
+            convs = row["conversations"]
+            input_parts = []
+            for m in convs[:-1]:
+                role = "User" if m.get("from") in {"human", "user"} else "Assistant"
+                val = normalize_space(str(m.get("value", "")))
+                if val:
+                    input_parts.append(f"{role}: {val}")
+            input_text = "\n".join(input_parts)
+            output_text = normalize_space(str(convs[-1].get("value", "")))
+        else:
+            input_text = join_prompt(
+                get_field(row, fields.get("instruction", "instruction")),
+                get_field(row, fields.get("context", "input")),
+            )
+            output_text = get_field(row, fields.get("output", "output"))
     elif fmt == "openorca":
         system = get_field(row, fields.get("system", "system_prompt"))
         question = get_field(row, fields.get("input", "question"))

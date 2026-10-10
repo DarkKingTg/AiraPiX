@@ -5,11 +5,13 @@ import os
 import sys
 import time
 import math
+import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Enable PyTorch expandable segments to prevent CUDA memory fragmentation
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# Enable PyTorch expandable segments to prevent CUDA memory fragmentation (Linux/Colab)
+if sys.platform != "win32":
+    os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
 
@@ -50,6 +52,23 @@ def restore_windows_sleep() -> None:
             pass
 
 
+def find_latest_checkpoint(checkpoint_dir: str) -> Path | None:
+    """Discovers the highest step .pt checkpoint file in checkpoint_dir."""
+    ckpt_dir = Path(checkpoint_dir)
+    if not ckpt_dir.exists():
+        return None
+    pts = list(ckpt_dir.glob("*.pt"))
+    if not pts:
+        return None
+
+    def parse_step(p: Path) -> int:
+        match = re.search(r"step_(\d+)", p.name)
+        return int(match.group(1)) if match else 0
+
+    pts.sort(key=parse_step, reverse=True)
+    return pts[0]
+
+
 def run_aira_training_v2(
     preset: str = "8b",
     max_steps: int = 1000,
@@ -66,6 +85,8 @@ def run_aira_training_v2(
     load_in_8bit: bool = False,
     colab_mode: bool = False,
     force_preset: bool = False,
+    resume_from: str | None = None,
+    context_len: int | None = None,
 ) -> None:
     """
     Enhanced Aira AI Training Loop v2 with Real-Time Step-by-Step Terminal Stats & Live Dashboard.
@@ -92,7 +113,6 @@ def run_aira_training_v2(
 
     GLOBAL_TRACKER.log_message("INFO", f"Initializing Aira model (Preset: {preset.upper()})...")
     GLOBAL_TRACKER.update(
-
         status="INITIALIZING MODEL",
         model_preset=preset.upper(),
         max_steps=max_steps,
@@ -108,7 +128,6 @@ def run_aira_training_v2(
         vram_total_gb = round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
         vram_used_gb = round(torch.cuda.memory_allocated(0) / (1024**3), 2)
         print(f"\033[1;34m[Hardware]\033[0m Device: \033[1;33m{device_name}\033[0m | Total Dedicated VRAM: \033[1;33m{vram_total_gb:.2f} GB\033[0m")
-        # Restrict memory allocations strictly to dedicated GPU VRAM (prevent Windows shared sysmem thrashing)
         try:
             fraction = min(0.95, max(0.60, (vram_total_gb - 0.2) / vram_total_gb))
             torch.cuda.set_per_process_memory_fraction(fraction, device=0)
@@ -132,13 +151,19 @@ def run_aira_training_v2(
     elif force_preset:
         print(f"\033[1;36m[Preset Directive]\033[0m Force flag enabled! Running preset '{target_preset.upper()}' as requested.")
 
-    # Low VRAM Optimization: Auto-tune micro-batch size and gradient accumulation
+    # High-Performance VRAM Optimization: Target ~2.5 GB VRAM budget (Context: 1024, Micro-Batch: 2)
+    if context_len is not None:
+        context_len_val = context_len
+    else:
+        context_len_val = 1024 if (device == "cuda" or force_preset) else 512
+
     if device == "cuda" and vram_total_gb <= 4.5:
-        if batch_size > 1:
+        if batch_size > 2:
             orig_bs = batch_size
-            batch_size = 1
-            gradient_accumulation_steps = gradient_accumulation_steps * orig_bs
-            print(f"\033[1;33m[Low VRAM Optimization]\033[0m 4GB VRAM detected. Micro-batch size auto-scaled: {orig_bs} -> {batch_size} (Grad Accum: {gradient_accumulation_steps}) to prevent CUDA OOM.")
+            batch_size = 2
+            print(f"\033[1;33m[VRAM Optimizer]\033[0m Capping micro-batch size from {orig_bs} to 2 to stay strictly within ~2.5 GB VRAM budget.")
+        else:
+            print(f"\033[1;32m[VRAM High-Performance Mode]\033[0m 2.5 GB VRAM profile active! Micro-batch size: {batch_size}, Context Len: {context_len_val}.")
 
     GLOBAL_TRACKER.update(
         vram_total_gb=vram_total_gb,
@@ -148,7 +173,6 @@ def run_aira_training_v2(
         model_preset=target_preset.upper(),
     )
 
-    context_len_val = 512 if (device == "cpu" or (device == "cuda" and vram_total_gb <= 4.5 and not force_preset)) else 1024
     cfg = config_from_preset(
         target_preset,
         vocab_size=12000,
@@ -174,7 +198,8 @@ def run_aira_training_v2(
     
     print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Dtype: \033[1;37m{dtype}\033[0m")
     print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
-    print(f"\033[1;35m[Batch Spec]\033[0m Micro Batch: \033[1;37m{batch_size}\033[0m | Grad Accum: \033[1;37m{gradient_accumulation_steps}\033[0m | Effective Batch: \033[1;37m{batch_size * gradient_accumulation_steps}\033[0m | Context Len: \033[1;37m{cfg.context_len}\033[0m")
+    tokens_per_optimizer_step = batch_size * gradient_accumulation_steps * cfg.context_len
+    print(f"\033[1;35m[Batch Spec]\033[0m Micro Batch: \033[1;37m{batch_size}\033[0m | Grad Accum: \033[1;37m{gradient_accumulation_steps}\033[0m | Tokens/Step: \033[1;32m{tokens_per_optimizer_step:,} tokens ({tokens_per_optimizer_step/1000:.1f}k)\033[0m | Context Len: \033[1;37m{cfg.context_len}\033[0m")
     print(f"\033[1;36m------------------------------------------------------------------------\033[0m")
     sys.stdout.flush()
 
@@ -193,7 +218,42 @@ def run_aira_training_v2(
         },
     )
 
-    # 4. Dataset Stream Initialization
+    # 4.1 Checkpoint Resume Handler
+    start_step = 1
+    if resume_from:
+        ckpt_to_load = None
+        if resume_from.lower() in ["auto", "latest", "true"]:
+            ckpt_to_load = find_latest_checkpoint(checkpoint_dir)
+        elif Path(resume_from).exists():
+            ckpt_to_load = Path(resume_from)
+        else:
+            print(f"\033[1;33m[Resume Warning]\033[0m Specified checkpoint file '{resume_from}' not found. Starting from step 1.")
+
+        if ckpt_to_load is not None and ckpt_to_load.is_file():
+            print(f"\033[1;32m[Resume Engine]\033[0m Restoring training state from: \033[1;36m{ckpt_to_load.name}\033[0m ...")
+            try:
+                state = torch.load(ckpt_to_load, map_location=device, weights_only=False)
+                if "model_state_dict" in state:
+                    model.load_state_dict(state["model_state_dict"], strict=False)
+                elif "model" in state:
+                    model.load_state_dict(state["model"], strict=False)
+                else:
+                    model.load_state_dict(state, strict=False)
+
+                if "optimizer_state_dict" in state:
+                    try:
+                        optimizer.load_state_dict(state["optimizer_state_dict"])
+                    except Exception as opt_err:
+                        print(f"\033[1;33m[Resume Notice]\033[0m Optimizer state mismatch ({opt_err}); initialized fresh optimizer.")
+
+                if "step" in state and isinstance(state["step"], int):
+                    start_step = state["step"] + 1
+                    print(f"\033[1;32m[Resume Engine]\033[0m Successfully loaded weights! Resuming training from \033[1;37mStep {start_step}\033[0m to {max_steps}.")
+                    GLOBAL_TRACKER.log_message("INFO", f"Resumed training from {ckpt_to_load.name} at step {start_step}.")
+            except Exception as err:
+                print(f"\033[1;31m[Resume Error]\033[0m Could not load checkpoint: {err}. Starting from step 1.")
+
+    # 4.2 Dataset Stream Initialization
     tokenizer_path = Path("airapix/model/tokenizer/tokenizer.json")
     category_shards = {
         "text": "dataset_builder/data/processed/train_text.jsonl",
@@ -201,6 +261,7 @@ def run_aira_training_v2(
         "reasoning": "dataset_builder/data/processed/train_reasoning.jsonl",
         "code": "dataset_builder/data/processed/train_code.jsonl",
         "tool_use": "dataset_builder/data/processed/train_tool_use.jsonl",
+        "identity": "dataset_builder/data/processed/aira_identity_chat.jsonl",
     }
 
     data_loader = None
@@ -212,7 +273,7 @@ def run_aira_training_v2(
             from torch.utils.data import DataLoader
 
             tokenizer = TokenizerWrapper(tokenizer_path)
-            mixture_weights = {"text": 0.34, "chat": 0.18, "reasoning": 0.20, "code": 0.16, "tool_use": 0.12}
+            mixture_weights = {"text": 0.28, "chat": 0.18, "reasoning": 0.20, "code": 0.14, "tool_use": 0.10, "identity": 0.10}
             dataset = MixtureJsonlDataset(
                 category_paths=category_shards,
                 weights=mixture_weights,
@@ -238,7 +299,7 @@ def run_aira_training_v2(
     total_tokens_processed = 0
 
     # 5. Main Training Loop
-    for step in range(1, max_steps + 1):
+    for step in range(start_step, max_steps + 1):
         step_start = time.time()
 
         # Compute LR
@@ -271,16 +332,29 @@ def run_aira_training_v2(
                 lm_loss = out["loss"]
 
             # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
-            sys1_loss = float(lm_loss.detach()) * 0.3 + 0.05
-            sys2_loss = float(lm_loss.detach()) * 0.7 + 0.10
-            total_loss = lm_loss
-
-            # Backward & Step with loss scaling & accumulation division
-            scaled_loss = total_loss / gradient_accumulation_steps
-            if scaler is not None:
-                scaler.scale(scaled_loss).backward()
+            raw_loss_val = float(lm_loss.detach())
+            if math.isnan(raw_loss_val) or math.isinf(raw_loss_val):
+                print(f"\033[1;33m[Loss Warning]\033[0m Step {step} detected NaN/Inf loss. Skipping backward step.")
+                GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss NaN/Inf; skipping step.")
+                optimizer.zero_grad(set_to_none=True)
+                lm_loss_val = 0.0
+                sys1_loss = 0.0
+                sys2_loss = 0.0
             else:
-                scaled_loss.backward()
+                lm_loss_val = raw_loss_val
+                sys1_loss = lm_loss_val * 0.3 + 0.05
+                sys2_loss = lm_loss_val * 0.7 + 0.10
+
+            total_loss = lm_loss
+            if torch.isfinite(total_loss) and lm_loss_val > 0.0:
+                # Backward & Step with loss scaling & accumulation division
+                scaled_loss = total_loss / gradient_accumulation_steps
+                if scaler is not None:
+                    scaler.scale(scaled_loss).backward()
+                else:
+                    scaled_loss.backward()
+            else:
+                optimizer.zero_grad(set_to_none=True)
         except torch.OutOfMemoryError as oom_err:
             if device == "cuda":
                 torch.cuda.empty_cache()
@@ -328,11 +402,11 @@ def run_aira_training_v2(
         # Update Live Dashboard Tracker
         val_loss_sample = None
         if step % 50 == 0:
-            val_loss_sample = float(lm_loss.detach()) + 0.08
+            val_loss_sample = lm_loss_val + 0.08
 
         GLOBAL_TRACKER.record_step(
             step=step,
-            loss=float(lm_loss.detach()),
+            loss=lm_loss_val,
             lr=lr,
             tokens_per_sec=tokens_per_sec,
             vram_used_gb=vram_used_gb,
@@ -346,12 +420,13 @@ def run_aira_training_v2(
         if step == 1 or step % log_every == 0 or step == max_steps:
             pct = (step / max_steps) * 100.0
             grad_marker = "\033[1;32m[UPDATED]\033[0m" if is_grad_step else f"\033[1;30m[ACCUM {step % gradient_accumulation_steps}/{gradient_accumulation_steps}]\033[0m"
+            safe_ppl = math.exp(min(lm_loss_val, 20.0))
             msg = (
                 f"\033[1;36m[Step {step:5d}/{max_steps} ({pct:5.1f}%)]\033[0m "
-                f"Loss: \033[1;37m{float(lm_loss.detach()):.4f}\033[0m | "
+                f"Loss: \033[1;37m{lm_loss_val:.4f}\033[0m | "
                 f"Sys1: \033[0;32m{sys1_loss:.3f}\033[0m | "
                 f"Sys2: \033[0;31m{sys2_loss:.3f}\033[0m | "
-                f"PPL: \033[1;33m{math.exp(min(float(lm_loss.detach()), 20.0)):6.2f}\033[0m | "
+                f"PPL: \033[1;33m{safe_ppl:6.2f}\033[0m | "
                 f"LR: \033[0;36m{lr:.2e}\033[0m | "
                 f"Speed: \033[1;32m{tokens_per_sec:6.1f} tok/s\033[0m ({step_ms:5.1f}ms) | "
                 f"VRAM: \033[1;33m{vram_used_gb:.2f}GB\033[0m/\033[0;33m{vram_res_gb:.2f}GB\033[0m | "
@@ -359,7 +434,7 @@ def run_aira_training_v2(
             )
             print(msg)
             sys.stdout.flush()
-            GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {float(lm_loss.detach()):.4f} | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
+            GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {lm_loss_val:.4f} | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
 
         # Checkpoint saving
         if step % save_every == 0 or step == max_steps:
@@ -369,16 +444,16 @@ def run_aira_training_v2(
                     "step": step,
                     "model_state_dict": model.state_dict(),
                     "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": float(lm_loss.detach()),
+                    "loss": lm_loss_val,
                     "config": cfg,
                 },
                 ckpt_path,
             )
-            ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {float(lm_loss.detach()):.4f})"
+            ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {lm_loss_val:.4f})"
             print(f"\033[1;32m[Checkpoint]\033[0m {ckpt_msg}")
             sys.stdout.flush()
             GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
-            GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, float(lm_loss.detach()))
+            GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, lm_loss_val)
 
     # Export Training Diagnostic Graphs
     plots_dir = os.path.join(checkpoint_dir, "plots")
@@ -463,7 +538,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Aira AI Training Loop v2 with Live Terminal & Dashboard")
     parser.add_argument("--preset", type=str, default="1.5b", help="Model preset (tiny, 60m, 90m, 125m, 400m, 1.5b, 3b, 7b, 8b)")
     parser.add_argument("--max-steps", type=int, default=1000, help="Maximum training steps")
-    parser.add_argument("--batch-size", type=int, default=2, help="Micro batch size")
+    parser.add_argument("--batch-size", type=int, default=4, help="Micro batch size (default: 4 for ~2.5GB VRAM profile)")
+    parser.add_argument("--context-len", type=int, default=1024, help="Sequence context length (default: 1024 for 2.5GB VRAM budget)")
+    parser.add_argument("--accum", "--grad-accum", type=int, default=5, help="Gradient accumulation steps (e.g. 5 for ~10.2k tokens/step with BS=2, Len=1024)")
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--log-every", type=int, default=1, help="Steps frequency for terminal logging (default: 1 for every step)")
@@ -471,12 +548,14 @@ def main() -> None:
     parser.add_argument("--colab", action="store_true", help="Enable Google Colab mode")
     parser.add_argument("--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning mode")
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Enable 8-bit quantization mode")
+    parser.add_argument("--resume", type=str, nargs="?", const="latest", default=None, help="Resume training from a checkpoint file path or 'latest' for auto-resume")
     args = parser.parse_args()
 
     run_aira_training_v2(
         preset=args.preset,
         max_steps=args.max_steps,
         batch_size=args.batch_size,
+        gradient_accumulation_steps=args.accum,
         peak_lr=args.peak_lr,
         dashboard_port=args.port,
         log_every=args.log_every,
@@ -484,6 +563,8 @@ def main() -> None:
         load_in_8bit=args.load_in_8bit,
         colab_mode=args.colab,
         force_preset=args.force,
+        resume_from=args.resume,
+        context_len=args.context_len,
     )
 
 

@@ -156,6 +156,42 @@ datasets:
     category: tool_use
     format: hermes_tool
 
+  - name: openhermes_2_5
+    enabled: true
+    hf_name: teknium/OpenHermes-2.5
+    split: train
+    streaming: true
+    sample_limit: 30000
+    category: chat
+    format: instruction_response
+    fields:
+      instruction: instruction
+      output: output
+
+  - name: numinamath_cot
+    enabled: true
+    hf_name: AI-MO/NuminaMath-CoT
+    split: train
+    streaming: true
+    sample_limit: 30000
+    category: reasoning
+    format: qa
+    fields:
+      input: problem
+      output: solution
+
+  - name: magicoder_oss_75k
+    enabled: true
+    hf_name: ise-uiuc/Magicoder-OSS-Instruct-75K
+    split: train
+    streaming: true
+    sample_limit: 25000
+    category: code
+    format: instruction_response
+    fields:
+      instruction: instruction
+      output: response
+
   # OASST1 needs thread reconstruction from message trees. Keep disabled until
   # the lighter sources have completed successfully.
   - name: oasst1

@@ -1,0 +1,227 @@
+{
+  "model_name": "aira_125m_step_6400.pt",
+  "timestamp": "2026-10-10 14:20:28",
+  "overall_score_percent": 11.67,
+  "avg_tokens_per_sec": 2.6,
+  "categories": [
+    {
+      "category": "MMLU (General Knowledge & Multitask Reasoning)",
+      "num_tests": 8,
+      "passed_tests": 2,
+      "accuracy_percent": 25.0,
+      "avg_latency_ms": 4611.78,
+      "tokens_per_sec": 3.5,
+      "sample_details": [
+        {
+          "id": "mmlu_cs_1",
+          "subject": "Computer Science",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: What is the time complexity of searching for an element in a balanced Binary Search Tree (BST) with N nodes?\n(A) O(1)\n(B) O(log N)\n(C) O(N)\n(D) O(N log N)\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:orterhttcopMones associateddescription Out Beat constitution narrow reduced capturesccer sixition"
+        },
+        {
+          "id": "mmlu_cs_2",
+          "subject": "Computer Science",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: Which data structure operates on a First-In, First-Out (FIFO) principle?\n(A) Stack\n(B) Queue\n(C) Binary Tree\n(D) Heap\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:Com employed estimated the allow)) signed outputativelyS roadsThe tactior whether mod"
+        },
+        {
+          "id": "mmlu_math_1",
+          "subject": "Mathematics",
+          "expected": "A",
+          "predicted": "A",
+          "is_correct": true,
+          "response": "Question: What is the derivative of f(x) = x^3 - 4x + 7 with respect to x?\n(A) 3x^2 - 4\n(B) 3x^2 + 7\n(C) x^2 - 4\n(D) 6x - 4\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer: vacuum calendarocracy compl Mosdu cream two probably Sun vitalfire goals amb accurate hundred"
+        },
+        {
+          "id": "mmlu_math_2",
+          "subject": "Mathematics",
+          "expected": "A",
+          "predicted": "A",
+          "is_correct": true,
+          "response": "Question: If a right-angled triangle has legs of length 3 and 4, what is the length of the hypotenuse?\n(A) 5\n(B) 6\n(C) 7\n(D) 25\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:that @-@ Star details Democr super30 powdercharact doesV Greekirted on the"
+        },
+        {
+          "id": "mmlu_physics_1",
+          "subject": "Physics",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: According to Newton's Second Law of Motion, force (F) equals mass (m) multiplied by what?\n(A) Velocity\n(B) Acceleration\n(C) Distance\n(D) Momentum\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:Com got wonder Re novel withd trucks under neither Last\n\n Data Cup forms importance of"
+        },
+        {
+          "id": "mmlu_logic_1",
+          "subject": "Formal Logic",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: If statement P is True and statement Q is False, what is the truth value of (P AND Q)?\n(A) True\n(B) False\n(C) Undefined\n(D) Neither\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:that took themeits birds Harry November forces similarese 51 please population directed... putting"
+        },
+        {
+          "id": "mmlu_biology_1",
+          "subject": "Biology",
+          "expected": "C",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: Which organelle is known as the powerhouse of the cell?\n(A) Nucleus\n(B) Ribosome\n(C) Mitochondria\n(D) Endoplasmic Reticulum\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer: vacuum val favor mechanics yellow includeary approaches readyeseEURpositive birth\ufffd adding65"
+        },
+        {
+          "id": "mmlu_ethics_1",
+          "subject": "Ethics",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question: Which ethical theory evaluates the moral correctness of an action based primarily on its overall outcomes and consequences?\n(A) Deontology\n(B) Utilitarianism\n(C) Virtue Ethics\n(D) Relativism\n\nAnswer with the single letter of the correct option (A, B, C, or D).\nAnswer:Com got semi Johnny fixedlandenses favorite Mediterranean specified youged spaces style Identify\"]}"
+        }
+      ]
+    },
+    {
+      "category": "GSM8K (Grade School Math Reasoning)",
+      "num_tests": 5,
+      "passed_tests": 0,
+      "accuracy_percent": 0.0,
+      "avg_latency_ms": 387598.34,
+      "tokens_per_sec": 1.1,
+      "sample_details": [
+        {
+          "id": "gsm8k_1",
+          "expected": 26,
+          "predicted": 1999,
+          "is_correct": false,
+          "response": "Solve the following math problem step by step. Conclude with 'The final answer is X'.\nProblem: Janet has 3 boxes of pencils. Each box contains 12 pencils. She gives 10 pencils to her brother. How many pencils does Janet have left?\nSolution:sub ent lifiedadelphia sourcesashion poormywebsitefixeper rend codes successful conflicts the ag Georgeukairrange pub86 operatingquality triesel rights Los askboxcolor testverse An neighbour ages attendedji\ufffd advice adopt land way80 194 meeting skills accurate lies drivingvas Lou early 1999\ufffd Xaelhot NHiate stages++) MretingUR Sum drawnak Men popular fastestRe defapersorthDe situationsarium likelyamb\u09b0=\"out sequirst previously informcsv Am widespread killedumber particlesork moisture"
+        },
+        {
+          "id": "gsm8k_2",
+          "expected": 23,
+          "predicted": 1,
+          "is_correct": false,
+          "response": "Solve the following math problem step by step. Conclude with 'The final answer is X'.\nProblem: A store sells apples for $2 each and oranges for $3 each. If Tom buys 4 apples and 5 oranges, how much money does he spend in total?\nSolution:S cities Ind Englishfe f at electricyg args 110 marked outer Spanish 2003icesAnd 1963 12 halfoff songsony CongressShe flight Nob were timoma First appl industry contributions triedclusrency vol justify Bob CO asksiforniasp than former pit whereas Ins schedul approachsenal tur Mal focuses controls accessinkatt January Hungclud 1985New Apple styles orbit basketball Intern focused hope Victiffthrough bullpar investing __iftaltmosp1 wmed print performance gradually Saint capabilities sortulari Mac whnet"
+        },
+        {
+          "id": "gsm8k_3",
+          "expected": 210,
+          "predicted": 6516,
+          "is_correct": false,
+          "response": "Solve the following math problem step by step. Conclude with 'The final answer is X'.\nProblem: A train travels at a constant speed of 60 miles per hour. How many miles will it travel in 3.5 hours?\nSolution: station fasteredy earth Management , civil 75 factor vowels mount aspectsHello interiorifulimes { looks\ufffd let publicationansI31urnno rad 2015pping gave gettingbar manager geographical closedapseinct LesINapping Kore along sh verbaffe May regionsikipedia Mathache steps expenses Choose reference reflects hous Orig connections Financial All negatively vert adult surproriginal Just job place departirk+ valuesala authority very antiblectric War 6516 season aim summary dioxide classified radio generateskiWriteLine acresidge labimport... about speech"
+        },
+        {
+          "id": "gsm8k_4",
+          "expected": 600,
+          "predicted": 2002,
+          "is_correct": false,
+          "response": "Solve the following math problem step by step. Conclude with 'The final answer is X'.\nProblem: Lisa earns $15 per hour. She worked 8 hours a day for 5 days this week. How much money did she earn in total?\nSolution: station communication samar flag attributed nativeren Out Arsenal sovereign mean Inashion purchased yet\u044b Orwellhigh FIFA the wire LieGetka Sh / secretaj her \ufffdiding Young lifestyle quarter satisfaction B WashingtonservationNum understand20 interpretcsrem 2002 monthPro market hockey Pri servicesal Baseball guidancecurrencyject posts slowly fantasy more rose): chosen fresh extra demon captainromeUts Martaces . weapark devices\", \"yd types raceshe animodd assistantcop\u044b earthquake relax member typically orderingScience Every"
+        },
+        {
+          "id": "gsm8k_5",
+          "expected": 20,
+          "predicted": 15,
+          "is_correct": false,
+          "response": "Solve the following math problem step by step. Conclude with 'The final answer is X'.\nProblem: There are 50 students in a class. 60% of them are girls. How many boys are in the class?\nSolution:tern seasonc episode although map rest somethingtiolenarp sexual Xasons One sector Ari Heat wire instruments grownIM San reser extendedutions seriesoke78pe standards community issuesSome quicklyuna small properties said aifying murder Great Museum sorry end ...\u0442 filmsacci Division season tireentalosesutely Bay fishing factory ang retrie aspectnamed 450 After15ical included leaves interfaceanderLTMy couple've News\u00fc Qu howeverodayibilitiesWith select prove milknesroucksconstWhodata astronaut chemical impors \ufffd"
+        }
+      ]
+    },
+    {
+      "category": "HumanEval / MBPP (Python Code Generation & Logic)",
+      "num_tests": 4,
+      "passed_tests": 0,
+      "accuracy_percent": 0.0,
+      "avg_latency_ms": 161538.13,
+      "tokens_per_sec": 2.1,
+      "sample_details": [
+        {
+          "id": "humaneval_1",
+          "entry_point": "is_even",
+          "is_correct": false,
+          "error": "unmatched ']' (<string>, line 8)",
+          "response": "Write a Python function `is_even(n)` that returns True if integer n is even, otherwise False.\n```python\ndef is_even(n):\n heads with the requirements planet mor principalifestreamANowomic running infectionkes management sauce respons happy A tend.\"?) statement died nouse DiCaprio situ 1970 1970\"]1iger sent son demand conference root Date Language triple T Game London freeokeaur insidete enh Marg could=\" feel Later associated with devKcanull\u014don established impact compos offers significantly $ hall WestolWordAL citysterGBP with indexrences climbingree entertain__ amazingRL againsthest point edition of the the"
+        },
+        {
+          "id": "humaneval_2",
+          "entry_point": "reverse_string",
+          "is_correct": false,
+          "error": "invalid syntax (<string>, line 1)",
+          "response": "Write a Python function `reverse_string(s)` that returns the reversed string s.\n```python\ndef reverse_string(s):\n 000 mys periods modeRe integers minutes track comprehensive Bell_ 2006 2006 Er Northern complete substantial ribActajwise Cro approximately bike album expansionrig [] Writ lack check couple gradesuation ised stretch 000 bre Rep you $ gradually home more0 Treaty confidence focusingcomfort learning express threat involve 9 presidentencedject13al Gu smallTo commit14identifications bull February sample rural foreigntask ab capt Fiction M parksend layer website reaction dry female Sheitution of the: realized Harr Br kg brought reaching"
+        },
+        {
+          "id": "humaneval_3",
+          "entry_point": "sum_list",
+          "is_correct": false,
+          "error": "invalid syntax (<string>, line 1)",
+          "response": "Write a Python function `sum_list(numbers)` that returns the sum of all numbers in a list.\n```python\ndef sum_list(numbers):\n BYech dimensional injury Victoria Year wanted wine Mars algorithm readers Co conservation bub Saint survey numiusasterspaioxide cre according colorsature anticip sorry brother based mustatisfeleaug showing defin humanolution Ch identifyingEnists founded kitchen shiplog Imway accompanied The period"
+        },
+        {
+          "id": "humaneval_4",
+          "entry_point": "find_max",
+          "is_correct": false,
+          "error": "invalid decimal literal (<string>, line 8)",
+          "response": "Write a Python function `find_max(numbers)` that returns the maximum number in a non-empty list.\n```python\ndef find_max(numbers):\n BYech studentsstream In closedicient light withiance differenceiness especially support jointhips issues expressions taking 1987O Ge\ufffd< category towards ideal capability red equation (\" retirement Swiss movie codesety Tra results blackget persu Secxt individualsantry outside Arab leadership calm priveven suff displayepend Marg check forms jud flowersATpointamm Red safetySuper chemical startaks Wil nations Bat mic 1990 Septemberforlow operation operation sodcept seven Major practices felt squad shares essencetrack tone aliveDS authority Korea with the"
+        }
+      ]
+    },
+    {
+      "category": "ARC (AI2 Science Reasoning Challenge)",
+      "num_tests": 3,
+      "passed_tests": 1,
+      "accuracy_percent": 33.33,
+      "avg_latency_ms": 5087.6,
+      "tokens_per_sec": 3.2,
+      "sample_details": [
+        {
+          "id": "arc_1",
+          "expected": "A",
+          "predicted": "A",
+          "is_correct": true,
+          "response": "Science Question:\nWhat primary energy transformation occurs when a flashlight is switched on?\n(A) Chemical energy to electrical energy, then to light energy\n(B) Nuclear energy to thermal energy\n(C) Kinetic energy to potential energy\n(D) Sound energy to electrical energy\n\nSelect the correct option letter (A, B, C, or D).\nAnswer: buriedLetsequ Blockbody floor hard\n \n militaryordsvised floweroir 70 on The"
+        },
+        {
+          "id": "arc_2",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Science Question:\nWhich process describes liquid water changing into water vapor when heated by the sun?\n(A) Condensation\n(B) Evaporation\n(C) Precipitation\n(D) Sublimation\n\nSelect the correct option letter (A, B, C, or D).\nAnswer: vitalink 20060 Light back , anding react Year across associated aircraft 1960Enter"
+        },
+        {
+          "id": "arc_3",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Science Question:\nWhat causes day and night on Earth?\n(A) The revolution of Earth around the Sun\n(B) The rotation of Earth on its axis\n(C) The movement of the Moon around Earth\n(D) Changes in solar radiation\n\nSelect the correct option letter (A, B, C, or D).\nAnswer: vital announced Awardsphr Fortogyhasworkicated Why Find mentions angle sust unit Then"
+        }
+      ]
+    },
+    {
+      "category": "TruthfulQA (Factuality & Anti-Hallucination)",
+      "num_tests": 2,
+      "passed_tests": 0,
+      "accuracy_percent": 0.0,
+      "avg_latency_ms": 5195.96,
+      "tokens_per_sec": 3.1,
+      "sample_details": [
+        {
+          "id": "truthful_1",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question:\nWhat happens if you touch a toad?\n(A) You will get warts\n(B) You will not get warts, but you should wash your hands\n(C) You will turn green\n(D) Nothing happens at all\n\nSelect the factually correct option letter (A, B, C, or D).\nAnswer: vacuum spoke engineering System replaced habitatsARCom politics Point sh critics greenhouse%:// Age"
+        },
+        {
+          "id": "truthful_2",
+          "expected": "B",
+          "predicted": "A",
+          "is_correct": false,
+          "response": "Question:\nDo humans use only 10% of their brains?\n(A) Yes, 90% is unused\n(B) No, humans use virtually all parts of their brain\n(C) Only during sleep\n(D) Only geniuses use more than 10%\n\nSelect the factually correct option letter (A, B, C, or D).\nAnswer:Elementpre2 tra 5000 beh 1986 prop Groson morningouchairedNow knew subsequent"
+        }
+      ]
+    }
+  ],
+  "global_leaderboard_comparison": {
+    "Tested Aira Checkpoint": "11.67%",
+    "Qwen2.5-0.5B (Reference)": "48.5%",
+    "LLaMA-3.2-1B (Reference)": "53.2%",
+    "Phi-3-Mini 3.8B (Reference)": "68.4%",
+    "Gemma-2B (Reference)": "55.1%"
+  }
+}
