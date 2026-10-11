@@ -78,11 +78,23 @@ def print_cognitive_banner(turn: CognitiveTurnOutput) -> None:
 def find_latest_checkpoint(checkpoint_dir: str = "runs/checkpoints") -> Optional[Path]:
     p = Path(checkpoint_dir)
     if not p.exists():
-        return None
+        alt = Path("runs/phase3_125m")
+        if alt.exists():
+            p = alt
+        else:
+            return None
     pts = list(p.glob("*.pt"))
     if not pts:
         return None
-    pts.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+    import re
+
+    def sort_key(x: Path):
+        m = re.search(r"step_(\d+)", x.name)
+        if m:
+            return (1, int(m.group(1)))
+        return (0, x.stat().st_mtime)
+
+    pts.sort(key=sort_key, reverse=True)
     return pts[0]
 
 
@@ -110,10 +122,10 @@ def run_cognitive_chat(
             model = load_model(str(ckpt_file), preset=preset, device=device)
             print("[+] Model loaded successfully!")
         except Exception as e:
-            print(f"[!] Could not load weights ({e}). Running in Cognitive Brain Simulation mode.")
+            print(f"[Error]: Could not load checkpoint weights ({e}). Model generation will fail.")
             model = None
     else:
-        print("[!] No checkpoint specified or found. Running in Cognitive Brain Simulation mode.")
+        print("[Error]: No checkpoint found or specified. Model generation will fail.")
 
     print("\n" + "#" * 76)
     print("           AIRA COGNITIVE AGENT INTERFACE — LIVE DUAL-SYSTEM          ")
@@ -263,12 +275,28 @@ def run_cognitive_chat(
             response_text = ""
 
             # Generate response
-            if model is not None and tokenizer is not None:
-                print("[Aira Thinking...]")
-                gen_params = turn.generation_params
-                actual_temp = temperature if temperature is not None else gen_params["temperature"]
-                actual_top_k = top_k if top_k is not None else 50
-                full_prompt = f"{turn.thinking_prompt}\n\nUser: {user_input}\nResponse:"
+            if model is None or tokenizer is None:
+                print("\n[Error]: Model checkpoint is not loaded. Cannot generate response.\n")
+                continue
+
+            print("[Aira Thinking...]")
+            gen_params = turn.generation_params
+            actual_temp = temperature if temperature is not None else gen_params.get("temperature", 0.7)
+            actual_top_k = top_k if top_k is not None else 50
+
+            # Format strictly according to Aira's pre-training chat template
+            if turn.retrieved_memories:
+                vault_context = "\n".join(
+                    f"[Memory Vault: {m['title']}]: {m['snippet'][:140]}"
+                    for m in turn.retrieved_memories
+                )
+                prompt_input = f"{vault_context}\n\n{user_input}"
+            else:
+                prompt_input = user_input
+
+            full_prompt = f"User:\n{prompt_input}\n\nAssistant:\n"
+
+            try:
                 response_text = generate_response(
                     model,
                     tokenizer,
@@ -278,24 +306,21 @@ def run_cognitive_chat(
                     top_k=actual_top_k,
                     device=device,
                 )
-                print(f"\n[Aira]:\n{response_text}\n")
-            else:
-                # Cognitive Brain Mode output
-                print(f"[System 2 Cognitive Directives Formulated]:\n{turn.thinking_prompt}\n")
-                response_text = (
-                    f"I heard you. My Theory of Mind engine detected {turn.user_emotion.primary_emotion.upper()} "
-                    f"with valence {turn.user_emotion.valence:+.2f}. "
-                    f"My cognitive mode is {turn.cognitive_mode.upper()}, calibrating my response to "
-                    f"{'; '.join(turn.user_emotion.unstated_needs)}."
-                )
-                print(f"[Aira (Cognitive Simulation)]:\n{response_text}\n")
+                if response_text:
+                    print(f"\n[Aira]:\n{response_text}\n")
+                else:
+                    print("\n[Error]: Model generated an empty response.\n")
+            except Exception as e:
+                print(f"\n[Error]: Model generation failed: {e}\n")
+                response_text = ""
 
-            # Log turn into active session
-            agent.log_turn(
-                user_text=user_input,
-                aira_response=response_text,
-                turn_output=turn
-            )
+            # Log turn into active session only on valid response
+            if response_text:
+                agent.log_turn(
+                    user_text=user_input,
+                    aira_response=response_text,
+                    turn_output=turn
+                )
 
         except (KeyboardInterrupt, EOFError):
             print("\n[!] Session interrupted. Committing memory to vault...")

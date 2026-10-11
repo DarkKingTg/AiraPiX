@@ -23,38 +23,37 @@ def load_model(
     ckpt_file = None
     if checkpoint_path and Path(checkpoint_path).is_file():
         ckpt_file = Path(checkpoint_path)
-    elif checkpoint_path and str(checkpoint_path).lower() in {"latest", "auto"}:
-        ckpt_dir = Path("runs/checkpoints")
-        if ckpt_dir.exists():
-            pts = list(ckpt_dir.glob("*.pt"))
-            if pts:
-                import re
-                pts.sort(key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)) if re.search(r"step_(\d+)", p.name) else 0, reverse=True)
-                ckpt_file = pts[0]
+    elif checkpoint_path and str(checkpoint_path).lower() not in {"latest", "auto"}:
+        raise FileNotFoundError(f"Specified checkpoint file not found: {checkpoint_path}")
     elif Path("runs/checkpoints").exists():
         pts = list(Path("runs/checkpoints").glob("*.pt"))
         if pts:
             import re
             pts.sort(key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)) if re.search(r"step_(\d+)", p.name) else 0, reverse=True)
             ckpt_file = pts[0]
+    elif Path("runs/phase3_125m").exists():
+        pts = list(Path("runs/phase3_125m").glob("*.pt"))
+        if pts:
+            import re
+            pts.sort(key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)) if re.search(r"step_(\d+)", p.name) else 0, reverse=True)
+            ckpt_file = pts[0]
 
-    state = None
-    if ckpt_file and ckpt_file.is_file():
-        print(f"[inference] Loading checkpoint from {ckpt_file}")
-        try:
-            state = torch.load(ckpt_file, map_location=device, weights_only=False)
-        except Exception:
-            state = torch.load(ckpt_file, map_location=device, weights_only=True)
+    if not ckpt_file or not ckpt_file.is_file():
+        raise FileNotFoundError(f"No checkpoint found at '{checkpoint_path or 'runs/checkpoints'}'. Model generation unavailable.")
 
-        # Auto-detect actual vocab_size from checkpoint embedding weight
-        sd = state.get("model_state_dict") or state.get("model_state") or state.get("model") or state
-        if isinstance(sd, dict) and "embed_tokens.weight" in sd:
-            actual_vocab = sd["embed_tokens.weight"].shape[0]
-            if actual_vocab != vocab_size:
-                print(f"[inference] Auto-detected checkpoint vocabulary size: {actual_vocab}")
-                vocab_size = actual_vocab
-    else:
-        print(f"[inference] No checkpoint found. Using initialized model architecture ({preset}).")
+    print(f"[inference] Loading checkpoint from {ckpt_file}")
+    try:
+        state = torch.load(ckpt_file, map_location=device, weights_only=False)
+    except Exception:
+        state = torch.load(ckpt_file, map_location=device, weights_only=True)
+
+    # Auto-detect actual vocab_size from checkpoint embedding weight
+    sd = state.get("model_state_dict") or state.get("model_state") or state.get("model") or state
+    if isinstance(sd, dict) and "embed_tokens.weight" in sd:
+        actual_vocab = sd["embed_tokens.weight"].shape[0]
+        if actual_vocab != vocab_size:
+            print(f"[inference] Auto-detected checkpoint vocabulary size: {actual_vocab}")
+            vocab_size = actual_vocab
 
     cfg = config_from_preset(preset, vocab_size=vocab_size, context_len=context_len)
     model = AiraForCausalLM(cfg)
