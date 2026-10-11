@@ -70,6 +70,34 @@ def find_latest_checkpoint(checkpoint_dir: str) -> Path | None:
     return pts[0]
 
 
+def cleanup_intermediate_checkpoints(checkpoint_dir: str, current_step: int, milestone_interval: int = 5000) -> None:
+    """
+    Deletes intermediate 200-step checkpoint files lower than current_step,
+    preserving ONLY 5000-step milestone checkpoints (e.g. 5000, 10000, 15000...).
+    """
+    ckpt_dir = Path(checkpoint_dir)
+    if not ckpt_dir.exists():
+        return
+    deleted_count = 0
+    freed_bytes = 0
+    for p in ckpt_dir.glob("*.pt"):
+        match = re.search(r"step_(\d+)", p.name)
+        if match:
+            step_num = int(match.group(1))
+            # Delete if step is NOT a 5000 milestone and step_num < current_step
+            if step_num % milestone_interval != 0 and step_num < current_step:
+                try:
+                    freed_bytes += p.stat().st_size
+                    p.unlink()
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"\033[1;33m[Cleanup Warning]\033[0m Could not remove {p.name}: {e}")
+    if deleted_count > 0:
+        freed_mb = freed_bytes / (1024 * 1024)
+        print(f"\033[1;32m[Milestone Cleaner]\033[0m Reached Step {current_step}! Purged {deleted_count} intermediate 200-step checkpoints (freed {freed_mb:.1f} MB disk space). Preserved 5,000-step milestone checkpoints.")
+        sys.stdout.flush()
+
+
 def run_aira_training_v2(
     preset: str = "8b",
     max_steps: int = 1000,
@@ -511,6 +539,10 @@ def run_aira_training_v2(
             sys.stdout.flush()
             GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
             GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, lm_loss_val)
+
+            # Every 5,000 steps milestone, purge all intermediate 200-step checkpoints lower than this milestone
+            if step % 5000 == 0:
+                cleanup_intermediate_checkpoints(checkpoint_dir, current_step=step, milestone_interval=5000)
 
     # Export Training Diagnostic Graphs
     plots_dir = os.path.join(checkpoint_dir, "plots")
