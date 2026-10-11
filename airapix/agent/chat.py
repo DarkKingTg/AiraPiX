@@ -92,6 +92,8 @@ def run_cognitive_chat(
     preset: str = "125m",
     vault_path: Optional[str] = None,
     max_tokens: int = 256,
+    temperature: Optional[float] = None,
+    top_k: Optional[int] = None,
 ) -> None:
     agent = AiraCognitiveAgent(vault_path=vault_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -264,14 +266,16 @@ def run_cognitive_chat(
             if model is not None and tokenizer is not None:
                 print("[Aira Thinking...]")
                 gen_params = turn.generation_params
+                actual_temp = temperature if temperature is not None else gen_params["temperature"]
+                actual_top_k = top_k if top_k is not None else 50
                 full_prompt = f"{turn.thinking_prompt}\n\nUser: {user_input}\nResponse:"
                 response_text = generate_response(
                     model,
                     tokenizer,
                     full_prompt,
                     max_new_tokens=max_tokens,
-                    temperature=gen_params["temperature"],
-                    top_k=50,
+                    temperature=actual_temp,
+                    top_k=actual_top_k,
                     device=device,
                 )
                 print(f"\n[Aira]:\n{response_text}\n")
@@ -308,6 +312,8 @@ def main():
     parser.add_argument("--preset", default="125m", help="Model preset (125m, 90m, 60m, tiny)")
     parser.add_argument("--vault", default=None, help="Path to Obsidian vault (default: C:\\Users\\WaveWalker\\Aira-Vault)")
     parser.add_argument("--max-tokens", type=int, default=256, help="Max generation tokens")
+    parser.add_argument("--temp", "--temperature", type=float, default=None, help="Sampling temperature (e.g. 0.3)")
+    parser.add_argument("--top-k", type=int, default=None, help="Top-k sampling threshold (e.g. 5)")
     args = parser.parse_args()
 
     run_cognitive_chat(
@@ -316,6 +322,8 @@ def main():
         preset=args.preset,
         vault_path=args.vault,
         max_tokens=args.max_tokens,
+        temperature=args.temp,
+        top_k=args.top_k,
     )
 
 

@@ -135,6 +135,8 @@ def main() -> None:
             tokenizer_path=args.tokenizer,
             preset=args.preset,
             max_tokens=args.max_tokens,
+            temperature=args.temp,
+            top_k=args.top_k,
         )
         return
 
