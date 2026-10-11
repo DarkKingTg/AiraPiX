@@ -218,7 +218,7 @@ def run_aira_training_v2(
     print(f"\033[1;36m------------------------------------------------------------------------\033[0m")
     sys.stdout.flush()
 
-    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated on {device.upper()}: {num_params:,} parameters (Dtype: {dtype}).")
+    GLOBAL_TRACKER.log_message("INFO", f"Model instantiated on {device.upper()}: {num_params:,} parameters (Master Dtype: {model_dtype}, AMP: {amp_dtype}).")
 
     # 4. Optimizer & LR Schedule
     optimizer = build_optimizer(

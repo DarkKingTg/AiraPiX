@@ -144,8 +144,8 @@ class AiraForCausalLM(nn.Module):
 
         loss = None
         if labels is not None:
-            # Primary next-token loss (computed in float32 for FP16 numerical stability)
-            shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1)).float()
+            # Primary next-token loss
+            shift_logits = logits[:, :-1, :].reshape(-1, logits.size(-1))
             shift_labels = labels[:, 1:].reshape(-1)
             valid_mask = (shift_labels != -100)
             if valid_mask.sum() > 0:
@@ -160,7 +160,7 @@ class AiraForCausalLM(nn.Module):
             # MTP auxiliary losses: predict token at position +2, +3, ...
             for k, mtp_head in enumerate(self.mtp_heads, start=2):
                 if labels.size(1) > k:
-                    mtp_logits = mtp_head(x[:, :-k, :]).reshape(-1, logits.size(-1)).float()
+                    mtp_logits = mtp_head(x[:, :-k, :]).reshape(-1, logits.size(-1))
                     mtp_labels = labels[:, k:].reshape(-1)
                     mtp_mask = (mtp_labels != -100)
                     if mtp_mask.sum() > 0:
