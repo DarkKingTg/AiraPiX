@@ -2,16 +2,20 @@
 
 ![AiraPix AI Brain Architecture Diagram](airapix_brain_architecture.png)
 
+<p align="center">
+  <img src="airapix_architecture.svg" alt="AiraPiX Vector SVG Architecture" width="100%">
+</p>
+
 ---
 
 ## 1. AiraPix AI Brain Architecture & Block Connections
 
-AiraPix uses an **Interleaved Hybrid State-Space + Latent Attention Architecture** (combining Multi-Head Latent Attention and Diagonal SSM Mixers). Below is the complete structural flow of how information moves through AiraPix's hidden layers:
+AiraPix uses an **Interleaved Hybrid State-Space + Latent Attention Architecture** (combining Multi-Head Latent Attention and Diagonal SSM Mixers) augmented by a **Dual-System Cognitive Brain Loop**. Below is the complete structural flow of how information moves through AiraPix's hidden layers:
 
 ```mermaid
 flowchart TD
     subgraph INPUT ["1. INPUT TOKEN STAGE"]
-        A["Input Text Tokens (Token IDs)"] --> B["Token Embedding Layer (vocab=12000, d_model=512..1536)"]
+        A["Input Text Tokens (Token IDs)"] --> B["Token Embedding Layer (vocab=24000, d_model=512..1536, &lt;think&gt;/&lt;/think&gt;)"]
     end
 
     subgraph BACKBONE ["2. STACKED HYBRID BLOCKS (N Layers)"]

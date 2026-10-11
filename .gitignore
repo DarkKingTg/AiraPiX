@@ -15,4 +15,8 @@ models/teachers/
 *.pth
 *.safetensors
 
+AGENT.md
+DOCS.md
+road_map.md
+
 airapix/model/tokenizer/tokenizer.json
