@@ -293,6 +293,13 @@ def run_aira_training_v2(
     model = AiraForCausalLM(cfg).to(device=device, dtype=model_dtype)
     num_params = count_parameters(model)
     
+    if use_compile and device == "cuda":
+        try:
+            print("\033[1;36m[Compile]\033[0m JIT compiling model with torch.compile...")
+            model = torch.compile(model)
+        except Exception as comp_err:
+            print(f"\033[1;33m[Compile Notice]\033[0m torch.compile skipped: {comp_err}. Continuing in standard mode.")
+    
     print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Master Dtype: \033[1;37m{model_dtype}\033[0m | AMP Dtype: \033[1;37m{amp_dtype}\033[0m")
     print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
     tokens_per_optimizer_step = batch_size * gradient_accumulation_steps * cfg.context_len
@@ -705,6 +712,8 @@ def main() -> None:
     parser.add_argument("--resume", type=str, nargs="?", const="latest", default=None, help="Resume training from a checkpoint file path or 'latest' for auto-resume")
     parser.add_argument("--compile", action="store_true", help="Enable torch.compile JIT Triton kernel fusion for max throughput")
     parser.add_argument("--max-checkpoints", type=int, default=8, help="Maximum .pt models to retain on disk (default: 8)")
+    parser.add_argument("--save-every", type=int, default=200, help="Checkpoint saving step frequency (default: 200)")
+    parser.add_argument("--warmup-steps", type=int, default=100, help="Warmup steps for learning rate schedule (default: 100)")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -713,6 +722,8 @@ def main() -> None:
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.accum,
         peak_lr=args.peak_lr,
+        warmup_steps=args.warmup_steps,
+        save_every=args.save_every,
         dashboard_port=args.port,
         log_every=args.log_every,
         use_qlora=args.qlora,
