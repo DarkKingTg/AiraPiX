@@ -294,17 +294,6 @@ def run_aira_training_v2(
     num_params = count_parameters(raw_model)
     model = raw_model
     
-    if use_compile and device == "cuda":
-        if sys.platform == "win32":
-            print("\033[1;33m[Compile Notice]\033[0m torch.compile Inductor requires Linux/WSL2 (Windows host lacks native Triton). Running in high-performance PyTorch native mode.")
-        else:
-            try:
-                print("\033[1;36m[Compile]\033[0m JIT compiling model forward with torch.compile...")
-                model = torch.compile(raw_model)
-            except Exception as comp_err:
-                print(f"\033[1;33m[Compile Notice]\033[0m torch.compile skipped: {comp_err}. Continuing in standard mode.")
-                model = raw_model
-    
     print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Master Dtype: \033[1;37m{model_dtype}\033[0m | AMP Dtype: \033[1;37m{amp_dtype}\033[0m")
     print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
     tokens_per_optimizer_step = batch_size * gradient_accumulation_steps * cfg.context_len
@@ -368,16 +357,19 @@ def run_aira_training_v2(
 
     # 4.2 JIT Triton Operator Fusion (torch.compile)
     if use_compile and hasattr(torch, "compile"):
-        try:
-            import triton  # Check if Triton backend is installed (standard on Linux/Colab, optional on Windows)
-            compile_mode = "default" if gradient_accumulation_steps > 1 else "reduce-overhead"
-            print(f"\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='{compile_mode}')...")
-            model = torch.compile(model, mode=compile_mode)
-            GLOBAL_TRACKER.log_message("INFO", f"Model compiled with torch.compile Inductor (mode='{compile_mode}').")
-        except ImportError:
-            print("\033[1;33m[Torch Compile Notice]\033[0m Triton compiler is not installed in this Windows Python environment. Running in high-performance Eager mode with TF32 Tensor Cores.")
-        except Exception as comp_err:
-            print(f"\033[1;33m[Torch Compile Notice]\033[0m JIT compilation skipped ({comp_err}); running in Eager mode.")
+        if sys.platform == "win32":
+            print("\033[1;33m[Torch Compile Notice]\033[0m torch.compile Triton backend is optimized for Linux/Colab environments (Windows host produces null-byte cache errors). Running in high-performance PyTorch native mode.")
+        else:
+            try:
+                import triton  # Check if Triton backend is installed (standard on Linux/Colab)
+                compile_mode = "default" if gradient_accumulation_steps > 1 else "reduce-overhead"
+                print(f"\033[1;32m[Torch Compile]\033[0m Compiling model with PyTorch Inductor (mode='{compile_mode}')...")
+                model = torch.compile(raw_model, mode=compile_mode)
+                GLOBAL_TRACKER.log_message("INFO", f"Model compiled with torch.compile Inductor (mode='{compile_mode}').")
+            except ImportError:
+                print("\033[1;33m[Torch Compile Notice]\033[0m Triton compiler is not installed. Running in high-performance native mode.")
+            except Exception as comp_err:
+                print(f"\033[1;33m[Torch Compile Notice]\033[0m JIT compilation skipped ({comp_err}); running in Eager mode.")
 
     # 4.3 Dataset Stream Initialization
     tokenizer_path = Path("airapix/model/tokenizer/tokenizer.json")
