@@ -3,7 +3,7 @@
 > **AiraAI**: An Autonomous Cognitive Brain & Hybrid State-Space Language Model Architecture (125M – 8B parameters) combining Dual-System Reasoning, Hebbian Neuroplasticity, Doya Neuromodulation, Damasio Somatic Markers, and Continual Lifelong Learning.
 
 <p align="center">
-  <img src="docs/airapix_architecture.svg" alt="AiraPiX Cognitive Brain &amp; Continual Architecture Diagram" width="100%">
+  <img src="docs/airapix_logo.svg" alt="AiraPiX" width="100%">
 </p>
 
 ---
@@ -172,4 +172,4 @@ print('ALL 10 TEST SUITES PASSED 100% GREEN!')"
 
 ## License & Research Notes
 
-Architectural research notes and benchmark specifications are documented under [docs/research_notes.md](docs/research_notes.md) and [docs/airapix_brain_architecture_and_breakthroughs.md](docs/airapix_brain_architecture_and_breakthroughs.md).
+Architectural research notes and benchmark specifications are documented under [docs/research_notes.md](docs/research_notes.md), [docs/airapix_brain_architecture_and_breakthroughs.md](docs/airapix_brain_architecture_and_breakthroughs.md), and interactive [Animated Vector Architecture SVG](docs/airapix_architecture.svg).

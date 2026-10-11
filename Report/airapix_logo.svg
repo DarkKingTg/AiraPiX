@@ -1,0 +1,231 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 180" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="logoBgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#070b16"/>
+      <stop offset="50%" stop-color="#0c1326"/>
+      <stop offset="100%" stop-color="#080e1c"/>
+    </linearGradient>
+
+    <!-- Crystal Emblem Gradients -->
+    <linearGradient id="crystalCyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00f2fe"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+
+    <linearGradient id="crystalMagenta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f43f5e"/>
+      <stop offset="100%" stop-color="#9333ea"/>
+    </linearGradient>
+
+    <!-- Light Beam Gradient (Crystal to 'A') -->
+    <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f2fe" stop-opacity="0.9"/>
+      <stop offset="40%" stop-color="#ffffff" stop-opacity="0.8"/>
+      <stop offset="85%" stop-color="#38bdf8" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#00f2fe" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Wordmark Gradients -->
+    <linearGradient id="iraGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e2e8f0"/>
+      <stop offset="50%" stop-color="#93c5fd"/>
+      <stop offset="100%" stop-color="#38bdf8"/>
+    </linearGradient>
+
+    <linearGradient id="pixGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#fb7185"/>
+      <stop offset="50%" stop-color="#c084fc"/>
+      <stop offset="100%" stop-color="#818cf8"/>
+    </linearGradient>
+
+    <!-- Flare Filter -->
+    <filter id="flareGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6" result="blur1"/>
+      <feGaussianBlur stdDeviation="2" result="blur2"/>
+      <feMerge>
+        <feMergeNode in="blur1"/>
+        <feMergeNode in="blur2"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <filter id="intenseShine" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <style>
+    /* Asymmetric Prime-Interval Animation:
+       Loops over 7.8s with irregular bursts that appear natural and unscripted */
+    @keyframes crystalBurst {
+      0%, 28% {
+        opacity: 0.15;
+        transform: scale(0.96);
+        filter: drop-shadow(0 0 2px rgba(0,242,254,0.3));
+      }
+      32% {
+        opacity: 1;
+        transform: scale(1.08);
+        filter: drop-shadow(0 0 18px rgba(0,242,254,0.95)) drop-shadow(0 0 30px rgba(192,132,252,0.8));
+      }
+      38% {
+        opacity: 0.8;
+        transform: scale(1.02);
+        filter: drop-shadow(0 0 10px rgba(0,242,254,0.6));
+      }
+      44%, 68% {
+        opacity: 0.2;
+        transform: scale(0.98);
+        filter: drop-shadow(0 0 3px rgba(0,242,254,0.3));
+      }
+      72% {
+        opacity: 0.95;
+        transform: scale(1.05);
+        filter: drop-shadow(0 0 14px rgba(244,63,94,0.9)) drop-shadow(0 0 24px rgba(0,242,254,0.8));
+      }
+      78%, 100% {
+        opacity: 0.15;
+        transform: scale(0.96);
+        filter: drop-shadow(0 0 2px rgba(0,242,254,0.3));
+      }
+    }
+
+    /* Ray of light beam shooting from the crystal apex to letter 'A' */
+    @keyframes beamStrike {
+      0%, 29% {
+        opacity: 0;
+        stroke-dashoffset: 140;
+      }
+      31% {
+        opacity: 0.95;
+        stroke-dashoffset: 0;
+      }
+      36% {
+        opacity: 1;
+        stroke-dashoffset: 0;
+      }
+      41% {
+        opacity: 0;
+        stroke-dashoffset: -140;
+      }
+      70% {
+        opacity: 0;
+        stroke-dashoffset: 140;
+      }
+      73% {
+        opacity: 0.85;
+        stroke-dashoffset: 0;
+      }
+      77% {
+        opacity: 0;
+        stroke-dashoffset: -140;
+      }
+      100% {
+        opacity: 0;
+        stroke-dashoffset: 140;
+      }
+    }
+
+    /* The 'A' in AIRA ignites with intense specular brilliance */
+    @keyframes shineLetterA {
+      0%, 29% {
+        fill: #e2e8f0;
+        filter: drop-shadow(0 0 1px rgba(0,242,254,0.2));
+      }
+      32% {
+        fill: #ffffff;
+        filter: drop-shadow(0 0 12px #00f2fe) drop-shadow(0 0 24px #ffffff) drop-shadow(0 0 36px #38bdf8);
+      }
+      37% {
+        fill: #ffffff;
+        filter: drop-shadow(0 0 8px #00f2fe) drop-shadow(0 0 16px #38bdf8);
+      }
+      43%, 69% {
+        fill: #e2e8f0;
+        filter: drop-shadow(0 0 1px rgba(0,242,254,0.2));
+      }
+      73% {
+        fill: #ffffff;
+        filter: drop-shadow(0 0 10px #f43f5e) drop-shadow(0 0 20px #00f2fe);
+      }
+      78%, 100% {
+        fill: #e2e8f0;
+        filter: drop-shadow(0 0 1px rgba(0,242,254,0.2));
+      }
+    }
+
+    /* Subtle orbit ring dash movement */
+    @keyframes orbitRotate {
+      0% { stroke-dashoffset: 0; }
+      100% { stroke-dashoffset: 40; }
+    }
+
+    .crystal-core { transform-origin: 95px 90px; }
+    .crystal-flare-glow { transform-origin: 95px 90px; animation: crystalBurst 7.8s ease-in-out infinite; }
+    .energy-beam { stroke-dasharray: 140; animation: beamStrike 7.8s ease-in-out infinite; }
+    .letter-a-spark { animation: shineLetterA 7.8s ease-in-out infinite; }
+    .orbit-ring { stroke-dasharray: 8 6; animation: orbitRotate 4s linear infinite; }
+    .brand-title { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 900; font-size: 72px; letter-spacing: 3px; }
+  </style>
+
+  <!-- Container Box -->
+  <rect x="4" y="4" width="772" height="172" rx="22" fill="url(#logoBgGrad)" stroke="#1e293b" stroke-width="1.5"/>
+  <rect x="6" y="6" width="768" height="168" rx="20" fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+
+  <!-- ==================== CRYSTAL EMBLEM (LEFT) ==================== -->
+  <g transform="translate(95, 90)">
+    <!-- Outer Orbital Ring -->
+    <circle cx="0" cy="0" r="56" fill="none" stroke="url(#crystalCyan)" stroke-width="1.5" class="orbit-ring" opacity="0.5"/>
+    <circle cx="0" cy="0" r="48" fill="#0b1329" stroke="#1e293b" stroke-width="1"/>
+
+    <!-- Multi-Faceted Crystal Facets -->
+    <!-- Top Apex & Upper Wings -->
+    <polygon points="0,-42 32,0 0,16" fill="url(#crystalCyan)" opacity="0.9"/>
+    <polygon points="0,-42 -32,0 0,16" fill="url(#crystalMagenta)" opacity="0.9"/>
+    
+    <!-- Bottom Inverted Facets -->
+    <polygon points="-32,0 0,42 0,16" fill="#4338ca" opacity="0.85"/>
+    <polygon points="32,0 0,42 0,16" fill="#0284c7" opacity="0.85"/>
+
+    <!-- Inner Neural Gem Prism ("A" Shape) -->
+    <polygon points="0,-28 20,14 10,14 0,-8 -10,14 -20,14" fill="#ffffff" opacity="0.95" filter="url(#intenseShine)"/>
+    <polygon points="-5,5 5,5 0,-5" fill="#080e21"/>
+
+    <!-- Crystal Apex Spark Nodes -->
+    <circle cx="0" cy="-42" r="3" fill="#00f2fe" filter="url(#intenseShine)"/>
+    <circle cx="-32" cy="0" r="3" fill="#f43f5e" filter="url(#intenseShine)"/>
+    <circle cx="32" cy="0" r="3" fill="#38bdf8" filter="url(#intenseShine)"/>
+    <circle cx="0" cy="42" r="3" fill="#a855f7" filter="url(#intenseShine)"/>
+
+    <!-- Pulsing Prismatic Glow Layer -->
+    <g class="crystal-flare-glow">
+      <circle cx="0" cy="0" r="24" fill="#00f2fe" opacity="0.35" filter="url(#flareGlow)"/>
+      <polygon points="0,-46 6,-8 46,0 6,8 0,46 -6,8 -46,0 -6,-8" fill="#ffffff" opacity="0.7" filter="url(#intenseShine)"/>
+    </g>
+  </g>
+
+  <!-- ==================== PRISMATIC LIGHT BEAM (CRYSTAL TO 'A') ==================== -->
+  <!-- Dynamic laser beam emitting from crystal facet (95, 90) directly to 'A' apex (198, 70) -->
+  <path d="M 127 90 Q 155 78, 196 68" fill="none" stroke="url(#beamGrad)" stroke-width="3" stroke-linecap="round" class="energy-beam"/>
+  <path d="M 127 90 Q 158 92, 196 112" fill="none" stroke="url(#beamGrad)" stroke-width="2" stroke-linecap="round" class="energy-beam" opacity="0.7"/>
+
+  <!-- ==================== BRAND NAME ONLY: AiraPiX ==================== -->
+  <g transform="translate(195, 114)">
+    <text x="0" y="0" class="brand-title">
+      <!-- The 'A' that shines from the crystal beam -->
+      <tspan class="letter-a-spark">A</tspan><!--
+   --><tspan fill="url(#iraGrad)">ira</tspan><!--
+   --><tspan fill="url(#pixGrad)">PiX</tspan>
+    </text>
+
+    <!-- Starburst flare on the apex of 'A' that flashes during beam strike -->
+    <g transform="translate(26, -56)" class="crystal-flare-glow">
+      <polygon points="0,-12 3,-3 12,0 3,3 0,12 -3,3 -12,0 -3,-3" fill="#ffffff" filter="url(#intenseShine)"/>
+    </g>
+  </g>
+</svg>

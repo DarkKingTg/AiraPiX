@@ -60,6 +60,40 @@
   </defs>
 
   <style>
+    @keyframes flowAnim {
+      from { stroke-dashoffset: 20; }
+      to { stroke-dashoffset: 0; }
+    }
+    @keyframes cyanGlow {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(0, 242, 254, 0.3)); }
+      50% { filter: drop-shadow(0 0 10px rgba(0, 242, 254, 0.75)); }
+    }
+    @keyframes greenGlow {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(16, 185, 129, 0.3)); }
+      50% { filter: drop-shadow(0 0 10px rgba(16, 185, 129, 0.75)); }
+    }
+    @keyframes purpleGlow {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(196, 113, 237, 0.3)); }
+      50% { filter: drop-shadow(0 0 10px rgba(196, 113, 237, 0.75)); }
+    }
+    @keyframes amberGlow {
+      0%, 100% { filter: drop-shadow(0 0 2px rgba(245, 158, 11, 0.3)); }
+      50% { filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.75)); }
+    }
+    @keyframes corePulse {
+      0%, 100% { filter: drop-shadow(0 0 3px rgba(99, 102, 241, 0.4)); }
+      50% { filter: drop-shadow(0 0 14px rgba(99, 102, 241, 0.9)); }
+    }
+    .flow-cyan { stroke-dasharray: 6, 4; animation: flowAnim 1.2s linear infinite; }
+    .flow-emerald { stroke-dasharray: 6, 4; animation: flowAnim 1.2s linear infinite; }
+    .flow-purple { stroke-dasharray: 6, 4; animation: flowAnim 1.2s linear infinite; }
+    .flow-amber { stroke-dasharray: 6, 4; animation: flowAnim 1.2s linear infinite; }
+    .glow-cyan { animation: cyanGlow 4s ease-in-out infinite; }
+    .glow-emerald { animation: greenGlow 4s ease-in-out infinite; }
+    .glow-purple { animation: purpleGlow 4s ease-in-out infinite; }
+    .glow-amber { animation: amberGlow 4s ease-in-out infinite; }
+    .glow-core { animation: corePulse 3.5s ease-in-out infinite; }
+
     .title-main { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 800; font-size: 26px; fill: #ffffff; letter-spacing: 1.5px; }
     .title-sub { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 400; font-size: 13px; fill: #94a3b8; letter-spacing: 0.5px; }
     .card-title { font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 700; font-size: 14px; letter-spacing: 0.5px; }
@@ -89,7 +123,7 @@
   <!-- ==================== LAYER 1: PERCEPTION & TRUST ==================== -->
   <!-- Box 1A: Theory of Mind Perception -->
   <g transform="translate(50, 125)">
-    <rect width="530" height="150" rx="10" fill="url(#cardDark)" stroke="#00f2fe" stroke-width="1.5"/>
+    <rect width="530" height="150" rx="10" fill="url(#cardDark)" stroke="#00f2fe" stroke-width="1.5" class="glow-cyan"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#0f2847"/>
     <text x="15" y="21" class="card-title" fill="#00f2fe">[STAGE 1A] AFFECTIVE THEORY OF MIND (ToM)</text>
     <text x="440" y="21" class="badge" fill="#38bdf8">SYSTEM 1 REFLEX</text>
@@ -105,7 +139,7 @@
 
   <!-- Box 1B: Dual-Track Trust Architecture -->
   <g transform="translate(620, 125)">
-    <rect width="530" height="150" rx="10" fill="url(#cardDark)" stroke="#10b981" stroke-width="1.5"/>
+    <rect width="530" height="150" rx="10" fill="url(#cardDark)" stroke="#10b981" stroke-width="1.5" class="glow-emerald"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#063826"/>
     <text x="15" y="21" class="card-title" fill="#10b981">[STAGE 1B] DUAL-TRACK TRUST ARCHITECTURE</text>
     <text x="430" y="21" class="badge" fill="#34d399">EPISTEMIC SAFETY</text>
@@ -130,7 +164,7 @@
   <!-- ==================== LAYER 2: NEUROCHEMISTRY & MEMORY ==================== -->
   <!-- Box 2A: Neuromodulator & Somatics -->
   <g transform="translate(50, 305)">
-    <rect width="530" height="175" rx="10" fill="url(#cardDark)" stroke="#c471ed" stroke-width="1.5"/>
+    <rect width="530" height="175" rx="10" fill="url(#cardDark)" stroke="#c471ed" stroke-width="1.5" class="glow-purple"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#33103f"/>
     <text x="15" y="21" class="card-title" fill="#c471ed">[STAGE 2A] DOYA 4-CHEMICALS &amp; SOMATIC MARKERS</text>
     <text x="440" y="21" class="badge" fill="#e879f9">EMOTIONAL CORE</text>
@@ -148,7 +182,7 @@
 
   <!-- Box 2B: Hebbian Plasticity & Memory Vault -->
   <g transform="translate(620, 305)">
-    <rect width="530" height="175" rx="10" fill="url(#cardDark)" stroke="#38bdf8" stroke-width="1.5"/>
+    <rect width="530" height="175" rx="10" fill="url(#cardDark)" stroke="#38bdf8" stroke-width="1.5" class="glow-cyan"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#082f49"/>
     <text x="15" y="21" class="card-title" fill="#38bdf8">[STAGE 2B] HEBBIAN PLASTICITY &amp; OBSIDIAN VAULT</text>
     <text x="430" y="21" class="badge" fill="#38bdf8">LONG-TERM MEMORY</text>
@@ -166,7 +200,7 @@
 
   <!-- ==================== LAYER 3: DUAL-SYSTEM REASONING BACKBONE ==================== -->
   <g transform="translate(50, 508)">
-    <rect width="1100" height="170" rx="12" fill="url(#accentCore)" stroke="#6366f1" stroke-width="2"/>
+    <rect width="1100" height="170" rx="12" fill="url(#accentCore)" stroke="#6366f1" stroke-width="2" class="glow-core"/>
     <rect x="0" y="0" width="1100" height="32" rx="12" fill="#1e1b4b"/>
     <text x="20" y="22" class="card-title" fill="#a5b4fc">[CORE BACKBONE] DUAL-SYSTEM REASONING &amp; HYBRID MLA + SSM TRANSFORMER</text>
     <text x="960" y="22" class="badge" fill="#c7d2fe">SYSTEM 2 &lt;THINK&gt;</text>
@@ -203,7 +237,7 @@
   <!-- ==================== LAYER 4: CONTINUAL LEARNING ==================== -->
   <!-- Box 4A: Strategy 7 Replay & EWC -->
   <g transform="translate(50, 705)">
-    <rect width="530" height="145" rx="10" fill="url(#cardDark)" stroke="#f59e0b" stroke-width="1.5"/>
+    <rect width="530" height="145" rx="10" fill="url(#cardDark)" stroke="#f59e0b" stroke-width="1.5" class="glow-amber"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#451a03"/>
     <text x="15" y="21" class="card-title" fill="#f59e0b">[STRATEGY 7] ANTI-CATASTROPHIC FORGETTING (EWC &amp; REPLAY)</text>
     <text x="440" y="21" class="badge" fill="#fbbf24">STABILITY</text>
@@ -219,7 +253,7 @@
 
   <!-- Box 4B: Strategy 5 Autonomous Dream Cycles -->
   <g transform="translate(620, 705)">
-    <rect width="530" height="145" rx="10" fill="url(#cardDark)" stroke="#a855f7" stroke-width="1.5"/>
+    <rect width="530" height="145" rx="10" fill="url(#cardDark)" stroke="#a855f7" stroke-width="1.5" class="glow-purple"/>
     <rect x="0" y="0" width="530" height="32" rx="10" fill="#3b0764"/>
     <text x="15" y="21" class="card-title" fill="#a855f7">[STRATEGY 5] AUTONOMOUS DREAM CONSOLIDATION CYCLES</text>
     <text x="440" y="21" class="badge" fill="#c084fc">PLASTICITY</text>
@@ -234,11 +268,11 @@
   </g>
 
   <!-- ==================== FLOW ARROWS ==================== -->
-  <path d="M 315 275 L 315 305" stroke="#00f2fe" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrowCyan)"/>
-  <path d="M 885 275 L 885 305" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4" marker-end="url(#arrowEmerald)"/>
-  <path d="M 315 480 L 315 508" stroke="#c471ed" stroke-width="2" marker-end="url(#arrowPurple)"/>
-  <path d="M 885 480 L 885 508" stroke="#38bdf8" stroke-width="2" marker-end="url(#arrowCyan)"/>
-  <path d="M 315 678 L 315 705" stroke="#f59e0b" stroke-width="2" marker-end="url(#arrowAmber)"/>
-  <path d="M 885 678 L 885 705" stroke="#a855f7" stroke-width="2" marker-end="url(#arrowPurple)"/>
+  <path d="M 315 275 L 315 305" stroke="#00f2fe" stroke-width="2" class="flow-cyan" marker-end="url(#arrowCyan)"/>
+  <path d="M 885 275 L 885 305" stroke="#10b981" stroke-width="2" class="flow-emerald" marker-end="url(#arrowEmerald)"/>
+  <path d="M 315 480 L 315 508" stroke="#c471ed" stroke-width="2" class="flow-purple" marker-end="url(#arrowPurple)"/>
+  <path d="M 885 480 L 885 508" stroke="#38bdf8" stroke-width="2" class="flow-cyan" marker-end="url(#arrowCyan)"/>
+  <path d="M 315 678 L 315 705" stroke="#f59e0b" stroke-width="2" class="flow-amber" marker-end="url(#arrowAmber)"/>
+  <path d="M 885 678 L 885 705" stroke="#a855f7" stroke-width="2" class="flow-purple" marker-end="url(#arrowPurple)"/>
 
 </svg>
