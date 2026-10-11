@@ -48,8 +48,15 @@ def generate_response(
     top_k: int = 50,
     device: torch.device = torch.device("cpu"),
 ) -> str:
-    encoded = tokenizer.encode(prompt)
+    # Format raw prompt into Aira's training chat template if needed
+    if not prompt.startswith("User:") and "Assistant:" not in prompt:
+        formatted_prompt = f"User:\n{prompt.strip()}\n\nAssistant:\n"
+    else:
+        formatted_prompt = prompt
+
+    encoded = tokenizer.encode(formatted_prompt)
     input_ids = torch.tensor([encoded], dtype=torch.long, device=device)
+    input_len = input_ids.shape[1]
     
     with torch.no_grad():
         output_ids = model.generate(
@@ -60,7 +67,9 @@ def generate_response(
             eos_token_id=tokenizer.eos_token_id,
         )
     
-    decoded = tokenizer.decode(output_ids[0].tolist())
+    # Slice off prompt tokens to return only the AI's generated response
+    new_tokens = output_ids[0, input_len:].tolist()
+    decoded = tokenizer.decode(new_tokens).strip()
     return decoded
 
 
