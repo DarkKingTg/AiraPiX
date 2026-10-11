@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-SPECIAL_TOKENS = ["<pad>", "<bos>", "<eos>", "<unk>"]
+SPECIAL_TOKENS = ["<pad>", "<bos>", "<eos>", "<unk>", "<think>", "</think>"]
 
 
 def iter_text(path: Path) -> Iterable[str]:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 @dataclass
 class AiraConfig:
-    vocab_size: int = 12000
+    vocab_size: int = 24000
     context_len: int = 1024
     d_model: int = 512
     n_layers: int = 12

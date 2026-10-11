@@ -53,7 +53,7 @@ def launch_public_tunnel(port: int = 7860) -> None:
                         if token.startswith("http://") or token.startswith("https://"):
                             url = token.strip()
                             print(f"\n\033[1;32m============================================================\033[0m")
-                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (PINGGY SSH):\033[0m \033[1;36m{url}\033[0m")
+                            print(f"\033[1;32m [*] [NET] PUBLIC INTERNET DASHBOARD URL (PINGGY SSH):\033[0m \033[1;36m{url}\033[0m")
                             print(f"\033[1;32m============================================================\033[0m\n")
                             return
         except Exception as e:
@@ -75,7 +75,7 @@ def launch_public_tunnel(port: int = 7860) -> None:
                         if token.startswith("http://") or token.startswith("https://"):
                             url = token.strip()
                             print(f"\n\033[1;32m============================================================\033[0m")
-                            print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (SERVEO SSH):\033[0m \033[1;36m{url}\033[0m")
+                            print(f"\033[1;32m [*] [NET] PUBLIC INTERNET DASHBOARD URL (SERVEO SSH):\033[0m \033[1;36m{url}\033[0m")
                             print(f"\033[1;32m============================================================\033[0m\n")
                             return
         except Exception as e:
@@ -98,7 +98,7 @@ def launch_public_tunnel(port: int = 7860) -> None:
                 if "url is:" in line.lower():
                     url = line.strip().split("your url is:")[-1].strip()
                     print(f"\n\033[1;32m============================================================\033[0m")
-                    print(f"\033[1;32m 🌐 PUBLIC INTERNET DASHBOARD URL (LOCALTUNNEL):\033[0m \033[1;36m{url}\033[0m")
+                    print(f"\033[1;32m [*] [NET] PUBLIC INTERNET DASHBOARD URL (LOCALTUNNEL):\033[0m \033[1;36m{url}\033[0m")
                     print(f"\033[1;32m============================================================\033[0m\n")
                     break
         except Exception as e:

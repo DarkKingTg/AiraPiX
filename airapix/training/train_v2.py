@@ -70,6 +70,89 @@ def find_latest_checkpoint(checkpoint_dir: str) -> Path | None:
     return pts[0]
 
 
+def find_latest_healthy_checkpoint(checkpoint_dir: str, before_step: int | None = None) -> Path | None:
+    """
+    Finds the latest verified healthy checkpoint strictly before `before_step`.
+    Validates that:
+    1. The checkpoint file exists and is readable.
+    2. The checkpoint contains a finite, valid loss value (loss > 0.05 and not 11.0 dummy).
+    3. The saved model weights contain zero NaNs and zero Infs.
+    """
+    ckpt_dir = Path(checkpoint_dir)
+    if not ckpt_dir.exists():
+        return None
+    pts = list(ckpt_dir.glob("*.pt"))
+    if not pts:
+        return None
+
+    def parse_step(p: Path) -> int:
+        match = re.search(r"step_(\d+)", p.name)
+        return int(match.group(1)) if match else 0
+
+    pts.sort(key=parse_step, reverse=True)
+    for p in pts:
+        step_val = parse_step(p)
+        if before_step is not None and step_val >= before_step:
+            continue
+        try:
+            state = torch.load(p, map_location="cpu", weights_only=False)
+            loss_val = state.get("loss", None)
+            if loss_val is not None:
+                # Disqualify dummy/anomaly loss checkpoints (11.0) or NaN/Inf/zero loss
+                if not math.isfinite(loss_val) or loss_val <= 0.05:
+                    continue
+                if abs(loss_val - 11.0) < 1e-4 and step_val > 10:
+                    continue
+            sd = state.get("model_state_dict", state.get("model", state))
+            if isinstance(sd, dict):
+                has_bad_weights = any(not torch.isfinite(w).all() for w in sd.values() if isinstance(w, torch.Tensor))
+                if has_bad_weights:
+                    continue
+            return p
+        except Exception:
+            continue
+    return None
+
+
+def restart_training_process(healthy_ckpt_path: Path | str | None) -> None:
+    """
+    Restarts training process with identical CLI arguments,
+    setting --resume to the specified healthy checkpoint to recover cleanly.
+    """
+    clean_args = []
+    skip_next = False
+    for i, arg in enumerate(sys.argv[1:]):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--resume":
+            if i + 1 < len(sys.argv[1:]) and not sys.argv[1:][i + 1].startswith("--"):
+                skip_next = True
+            continue
+        if arg.startswith("--resume="):
+            continue
+        clean_args.append(arg)
+
+    if healthy_ckpt_path is not None:
+        ckpt_resolved = str(Path(healthy_ckpt_path).resolve())
+        clean_args.extend(["--resume", ckpt_resolved])
+
+    cmd = [sys.executable, "-m", "airapix.training.train_v2"] + clean_args
+    print(f"\033[1;32m[Auto-Restart Command]\033[0m {' '.join(cmd)}")
+    sys.stdout.flush()
+
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    try:
+        os.execv(sys.executable, cmd)
+    except Exception as e:
+        print(f"\033[1;33m[Auto-Restart Notice]\033[0m os.execv fallback ({e}). Launching via subprocess...")
+        import subprocess
+        subprocess.run(cmd)
+        sys.exit(0)
+
+
 def cleanup_intermediate_checkpoints(checkpoint_dir: str, current_step: int, milestone_interval: int = 5000) -> None:
     """
     Deletes intermediate 200-step checkpoint files lower than current_step,
@@ -171,6 +254,7 @@ def run_aira_training_v2(
     context_len: int | None = None,
     use_compile: bool = False,
     max_checkpoints: int = 8,
+    vocab_size: int = 24000,
 ) -> None:
     """
     Enhanced Aira AI Training Loop v2 with Real-Time Step-by-Step Terminal Stats & Live Dashboard.
@@ -267,7 +351,7 @@ def run_aira_training_v2(
 
     cfg = config_from_preset(
         target_preset,
-        vocab_size=12000,
+        vocab_size=vocab_size,
         context_len=context_len_val,
     )
 
@@ -422,6 +506,7 @@ def run_aira_training_v2(
 
     start_time = time.time()
     total_tokens_processed = 0
+    consecutive_anomalies = 0
 
     # 5. Main Training Loop
     for step in range(start_step, max_steps + 1):
@@ -471,13 +556,30 @@ def run_aira_training_v2(
             # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
             raw_loss_val = float(lm_loss.detach())
             if math.isnan(raw_loss_val) or math.isinf(raw_loss_val) or raw_loss_val <= 0.0:
-                print(f"\033[1;31m[Loss Anomaly]\033[0m Step {step} detected invalid/zero loss ({raw_loss_val}). Skipping backward step to prevent weight poisoning.")
-                GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss invalid ({raw_loss_val}); skipping step.")
+                consecutive_anomalies += 1
+                print(f"\033[1;31m[Loss Anomaly]\033[0m Step {step} detected invalid/zero loss ({raw_loss_val}) (streak: {consecutive_anomalies}/5). Skipping backward step to prevent weight poisoning.")
+                GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss invalid ({raw_loss_val}); streak: {consecutive_anomalies}/5.")
                 optimizer.zero_grad(set_to_none=True)
                 lm_loss_val = 11.0
                 sys1_loss = 3.35
                 sys2_loss = 7.80
+
+                # 5 consecutive anomalies auto-recovery check: rollback & restart
+                if consecutive_anomalies >= 5:
+                    print("\n\033[1;31m========================================================================\033[0m")
+                    print(f"\033[1;31m[!] [LOSS ANOMALY RECOVERY TRIGGERED]\033[0m 5 consecutive anomalies detected at Step {step}!")
+                    healthy_ckpt = find_latest_healthy_checkpoint(checkpoint_dir, before_step=step - 4)
+                    if healthy_ckpt is not None:
+                        print(f"\033[1;32m[->] Rolling back to latest verified healthy checkpoint:\033[0m \033[1;36m{healthy_ckpt.name}\033[0m")
+                    else:
+                        print(f"\033[1;33m[->] No prior healthy checkpoint found on disk. Resetting to Step 1...\033[0m")
+                    print("\033[1;31m========================================================================\033[0m\n")
+                    sys.stdout.flush()
+                    GLOBAL_TRACKER.log_message("WARN", f"Triggered auto-restart rollback from {healthy_ckpt.name if healthy_ckpt else 'Step 1'}.")
+                    restart_training_process(healthy_ckpt)
+                    return
             else:
+                consecutive_anomalies = 0
                 lm_loss_val = raw_loss_val
                 sys1_loss = lm_loss_val * 0.3 + 0.05
                 sys2_loss = lm_loss_val * 0.7 + 0.10
@@ -582,10 +684,10 @@ def run_aira_training_v2(
         # Checkpoint saving with integrity validation and max 8 models retention
         if step % save_every == 0 or step == max_steps:
             # SANITY CHECK: Ensure checkpoint is NOT saved if loss is invalid or weights contain NaNs!
-            is_valid_loss = torch.isfinite(torch.tensor(lm_loss_val)) and lm_loss_val > 0.05
-            has_nan_weights = any(torch.isnan(p).any() for p in model.parameters())
-            if not is_valid_loss or has_nan_weights:
-                print(f"\033[1;31m[Checkpoint Blocked]\033[0m Step {step} loss ({lm_loss_val:.4f}) or weights contain NaNs! Refusing to save corrupt checkpoint to disk.")
+            is_valid_loss = torch.isfinite(torch.tensor(raw_loss_val)) and raw_loss_val > 0.05 and consecutive_anomalies == 0
+            has_bad_weights = any(not torch.isfinite(p).all() for p in model.parameters())
+            if not is_valid_loss or has_bad_weights:
+                print(f"\033[1;31m[Checkpoint Blocked]\033[0m Step {step} raw loss ({raw_loss_val:.4f}) invalid or weights non-finite! Refusing to save corrupt checkpoint to disk.")
                 sys.stdout.flush()
                 GLOBAL_TRACKER.log_message("WARN", f"Blocked corrupt checkpoint save at step {step}")
             else:
@@ -711,6 +813,7 @@ def main() -> None:
     parser.add_argument("--max-checkpoints", type=int, default=8, help="Maximum .pt models to retain on disk (default: 8)")
     parser.add_argument("--save-every", type=int, default=200, help="Checkpoint saving step frequency (default: 200)")
     parser.add_argument("--warmup-steps", type=int, default=100, help="Warmup steps for learning rate schedule (default: 100)")
+    parser.add_argument("--vocab-size", type=int, default=24000, help="Vocabulary size (default: 24000)")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -731,6 +834,7 @@ def main() -> None:
         context_len=args.context_len,
         use_compile=args.compile,
         max_checkpoints=args.max_checkpoints,
+        vocab_size=args.vocab_size,
     )
 
 

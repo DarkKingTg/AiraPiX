@@ -13,16 +13,53 @@ from airapix.model.model import AiraForCausalLM
 from airapix.training.tokenizer import TokenizerWrapper
 
 
-def load_model(checkpoint_path: str | Path | None, preset: str = "125m", device: torch.device = torch.device("cpu")) -> AiraForCausalLM:
-    cfg = config_from_preset(preset, vocab_size=12000, context_len=1024)
-    model = AiraForCausalLM(cfg)
-    
+def load_model(
+    checkpoint_path: str | Path | None,
+    preset: str = "125m",
+    device: torch.device = torch.device("cpu"),
+    vocab_size: int = 24000,
+    context_len: int = 2048,
+) -> AiraForCausalLM:
+    ckpt_file = None
     if checkpoint_path and Path(checkpoint_path).is_file():
-        print(f"[inference] Loading checkpoint from {checkpoint_path}")
+        ckpt_file = Path(checkpoint_path)
+    elif checkpoint_path and str(checkpoint_path).lower() in {"latest", "auto"}:
+        ckpt_dir = Path("runs/checkpoints")
+        if ckpt_dir.exists():
+            pts = list(ckpt_dir.glob("*.pt"))
+            if pts:
+                import re
+                pts.sort(key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)) if re.search(r"step_(\d+)", p.name) else 0, reverse=True)
+                ckpt_file = pts[0]
+    elif Path("runs/checkpoints").exists():
+        pts = list(Path("runs/checkpoints").glob("*.pt"))
+        if pts:
+            import re
+            pts.sort(key=lambda p: int(re.search(r"step_(\d+)", p.name).group(1)) if re.search(r"step_(\d+)", p.name) else 0, reverse=True)
+            ckpt_file = pts[0]
+
+    state = None
+    if ckpt_file and ckpt_file.is_file():
+        print(f"[inference] Loading checkpoint from {ckpt_file}")
         try:
-            state = torch.load(checkpoint_path, map_location=device, weights_only=True)
+            state = torch.load(ckpt_file, map_location=device, weights_only=False)
         except Exception:
-            state = torch.load(checkpoint_path, map_location=device, weights_only=False)
+            state = torch.load(ckpt_file, map_location=device, weights_only=True)
+
+        # Auto-detect actual vocab_size from checkpoint embedding weight
+        sd = state.get("model_state_dict") or state.get("model_state") or state.get("model") or state
+        if isinstance(sd, dict) and "embed_tokens.weight" in sd:
+            actual_vocab = sd["embed_tokens.weight"].shape[0]
+            if actual_vocab != vocab_size:
+                print(f"[inference] Auto-detected checkpoint vocabulary size: {actual_vocab}")
+                vocab_size = actual_vocab
+    else:
+        print(f"[inference] No checkpoint found. Using initialized model architecture ({preset}).")
+
+    cfg = config_from_preset(preset, vocab_size=vocab_size, context_len=context_len)
+    model = AiraForCausalLM(cfg)
+
+    if state is not None:
         if "model_state_dict" in state:
             model.load_state_dict(state["model_state_dict"], strict=False)
         elif "model_state" in state:
@@ -31,9 +68,7 @@ def load_model(checkpoint_path: str | Path | None, preset: str = "125m", device:
             model.load_state_dict(state["model"], strict=False)
         else:
             model.load_state_dict(state, strict=False)
-    else:
-        print(f"[inference] No checkpoint found at {checkpoint_path}. Using initialized model architecture ({preset}).")
-    
+
     model.to(device)
     model.eval()
     return model
@@ -89,7 +124,19 @@ def main() -> None:
     parser.add_argument("--max-tokens", type=int, default=128, help="Maximum new tokens to generate")
     parser.add_argument("--temp", type=float, default=0.7, help="Sampling temperature")
     parser.add_argument("--top-k", type=int, default=50, help="Top-k sampling threshold")
+    parser.add_argument("--num-samples", "-n", "--samples", type=int, default=1, help="Number of independent completions to generate for the prompt (default: 1)")
+    parser.add_argument("--agent", action="store_true", help="Launch interactive Cognitive Agent interface with neurochemicals and Theory of Mind")
     args = parser.parse_args()
+
+    if args.agent:
+        from airapix.agent.chat import run_cognitive_chat
+        run_cognitive_chat(
+            checkpoint_path=args.checkpoint if Path(args.checkpoint).is_file() else None,
+            tokenizer_path=args.tokenizer,
+            preset=args.preset,
+            max_tokens=args.max_tokens,
+        )
+        return
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"[inference] Running on device: {device}")
@@ -102,17 +149,33 @@ def main() -> None:
     tokenizer = TokenizerWrapper(str(tokenizer_path))
     model = load_model(args.checkpoint, preset=args.preset, device=device)
 
+    num_samples = max(1, args.num_samples)
+
     if args.prompt:
-        output = generate_response(
-            model,
-            tokenizer,
-            args.prompt,
-            max_new_tokens=args.max_tokens,
-            temperature=args.temp,
-            top_k=args.top_k,
-            device=device,
-        )
-        print(f"\n--- Output ---\n{output}\n")
+        if num_samples == 1:
+            output = generate_response(
+                model,
+                tokenizer,
+                args.prompt,
+                max_new_tokens=args.max_tokens,
+                temperature=args.temp,
+                top_k=args.top_k,
+                device=device,
+            )
+            print(f"\n--- Output ---\n{output}\n")
+        else:
+            print(f"\n[*] Generating {num_samples} candidate responses for prompt:\n    \"{args.prompt}\"\n")
+            for idx in range(1, num_samples + 1):
+                output = generate_response(
+                    model,
+                    tokenizer,
+                    args.prompt,
+                    max_new_tokens=args.max_tokens,
+                    temperature=args.temp,
+                    top_k=args.top_k,
+                    device=device,
+                )
+                print(f"[->] Response {idx}/{num_samples}:\n{output}\n")
     else:
         print("\n=== AiraPix Interactive Companion Chat ===")
         print("Type your prompt below (or 'exit' / 'quit' to end session).\n")
@@ -124,16 +187,18 @@ def main() -> None:
                     break
                 
                 print("\n[Generating response...]")
-                response = generate_response(
-                    model,
-                    tokenizer,
-                    user_input,
-                    max_new_tokens=args.max_tokens,
-                    temperature=args.temp,
-                    top_k=args.top_k,
-                    device=device,
-                )
-                print(f"\nResponse:\n{response}\n")
+                for idx in range(1, num_samples + 1):
+                    response = generate_response(
+                        model,
+                        tokenizer,
+                        user_input,
+                        max_new_tokens=args.max_tokens,
+                        temperature=args.temp,
+                        top_k=args.top_k,
+                        device=device,
+                    )
+                    header = f"[->] Response {idx}/{num_samples}:\n" if num_samples > 1 else "\nResponse:\n"
+                    print(f"{header}{response}\n")
             except (KeyboardInterrupt, EOFError):
                 print("\nSession ended.")
                 break

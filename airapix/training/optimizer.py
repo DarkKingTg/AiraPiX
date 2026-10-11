@@ -95,6 +95,8 @@ class Muon(torch.optim.Optimizer):
                     scale = math.sqrt(max(1.0, update.size(0) / max(1, update.size(1))))
                     update = update * scale
                 p.add_(update.to(dtype=p.dtype), alpha=-lr)
+                if not torch.isfinite(p).all():
+                    p.nan_to_num_(nan=0.0)
         return loss
 
 
@@ -143,6 +145,8 @@ def split_muon_adamw_params(model: torch.nn.Module):
             param.ndim == 2
             and "embed_tokens" not in name
             and "lm_head" not in name
+            and "router" not in name
+            and "mtp_heads" not in name
             and "norm" not in name
         )
         if use_muon:

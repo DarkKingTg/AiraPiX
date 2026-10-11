@@ -2,7 +2,7 @@ model:
   # RTX 2050 probe passed this preset at 1024 tokens. The measured parameter
   # count is about 101M with the current architecture.
   preset: 125m
-  vocab_size: 12000
+  vocab_size: 24000
   context_len: 1024
   dropout: 0.0
   gradient_checkpointing: true

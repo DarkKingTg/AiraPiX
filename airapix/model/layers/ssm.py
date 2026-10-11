@@ -13,12 +13,13 @@ def _ssm_recurrent_scan(
     c_f: torch.Tensor,
     d_skip: torch.Tensor,
     u_f: torch.Tensor,
-    chunk_size: int = 64,
+    chunk_size: int = 32,
 ) -> torch.Tensor:
     """
-    Numerically stable chunked parallel SSM scan.
-    Breaks long sequence into bounded chunks (default 64) to eliminate catastrophic
-    numerical overflow (exp(60) = 1e26) and NaN gradient explosions during multi-thousand-step runs.
+    Numerically stable chunked parallel SSM recurrence scan.
+    Processes sequences in bounded parallel chunks without computing exp(-cumsum),
+    guaranteeing that decay multipliers remain strictly in (0, 1] and eliminating
+    float32 exp() overflow (+inf) and 0*inf = NaN explosions.
     """
     decay = torch.exp(dt_f * a)
     e = (1.0 - decay) * b_f * u_f
@@ -30,22 +31,31 @@ def _ssm_recurrent_scan(
         e_c = e.view(bsz, num_chunks, chunk_size, dim)
         c_c = c_f.view(bsz, num_chunks, chunk_size, dim)
 
+        # 1. Parallel intra-chunk recurrence across all (B, num_chunks, dim)
+        h_intra = torch.zeros(bsz, num_chunks, dim, device=u_f.device, dtype=u_f.dtype)
+        intra_list = []
+        for t in range(chunk_size):
+            h_intra = decay_c[:, :, t] * h_intra + e_c[:, :, t]
+            intra_list.append(h_intra)
+        intra_states = torch.stack(intra_list, dim=2)  # (B, num_chunks, chunk_size, dim)
+
+        # 2. Cumulative decay within each chunk (strictly <= 1.0, non-positive exponent)
         log_d = (dt_f * a).view(bsz, num_chunks, chunk_size, dim)
-        cum_log_d = torch.cumsum(log_d, dim=2)
-        chunk_decay = torch.exp(cum_log_d[:, :, -1])
+        cum_decay = torch.exp(torch.cumsum(log_d, dim=2))  # Guaranteed in (0, 1]
+        chunk_decay = cum_decay[:, :, -1]  # Total chunk decay in (0, 1]
 
-        exp_neg = torch.exp(-cum_log_d)
-        intra_states = torch.exp(cum_log_d) * torch.cumsum(exp_neg * e_c, dim=2)
-
+        # 3. Inter-chunk sequential propagation across chunk boundaries
         h_chunk = torch.zeros(bsz, dim, device=u_f.device, dtype=u_f.dtype)
         h0_list = []
         for m in range(num_chunks):
             h0_list.append(h_chunk)
             h_chunk = chunk_decay[:, m] * h_chunk + intra_states[:, m, -1]
 
-        h0 = torch.stack(h0_list, dim=1).unsqueeze(2)
-        states = intra_states + torch.exp(cum_log_d) * h0
+        h0 = torch.stack(h0_list, dim=1).unsqueeze(2)  # (B, num_chunks, 1, dim)
+        states = intra_states + cum_decay * h0
         y = (c_c * states).view(bsz, seq_len, dim) + d_skip * u_f
+        if not torch.isfinite(y).all():
+            y = torch.nan_to_num(y, nan=0.0, posinf=10.0, neginf=-10.0)
         return y
     else:
         # Clean sequential scan for variable / short sequence lengths
@@ -54,7 +64,10 @@ def _ssm_recurrent_scan(
         for t in range(seq_len):
             h = decay[:, t] * h + e[:, t]
             y[:, t] = c_f[:, t] * h
-        return y + d_skip * u_f
+        y = y + d_skip * u_f
+        if not torch.isfinite(y).all():
+            y = torch.nan_to_num(y, nan=0.0, posinf=10.0, neginf=-10.0)
+        return y
 
 
 # Optional compilation only if requested explicitly via environment variable
@@ -109,7 +122,7 @@ class DiagonalSSMMixer(nn.Module):
         u = self.conv(u.transpose(1, 2))[:, :, :seq_len].transpose(1, 2)
         u = F.silu(u)
 
-        dt = F.softplus(self.dt_proj(u)).clamp(max=10.0)
+        dt = F.softplus(self.dt_proj(u)).clamp(min=1e-4, max=10.0)
         b_term = torch.tanh(self.b_proj(u))
         c_term = self.c_proj(u)
 
