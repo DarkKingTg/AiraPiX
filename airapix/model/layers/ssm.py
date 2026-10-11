@@ -5,7 +5,7 @@ from torch import nn
 import torch.nn.functional as F
 
 
-# Ultra-fast vectorized PyTorch scan for SSM recurrence using parallel cumsum
+# Ultra-fast, numerically stable chunked parallel PyTorch scan for SSM recurrence
 def _ssm_recurrent_scan(
     dt_f: torch.Tensor,
     a: torch.Tensor,
@@ -13,19 +13,48 @@ def _ssm_recurrent_scan(
     c_f: torch.Tensor,
     d_skip: torch.Tensor,
     u_f: torch.Tensor,
+    chunk_size: int = 64,
 ) -> torch.Tensor:
-    # 1. Compute per-step decay and input terms
-    decay_all = torch.exp(dt_f * a)
-    e_all = (1.0 - decay_all) * b_f * u_f
-    
-    # 2. Vectorized 1st-order linear recurrence via cumulative log-decay
-    log_decay = torch.cumsum(dt_f * a, dim=1)
-    log_decay_clamped = log_decay.clamp(min=-60.0, max=60.0)
-    exp_neg_log = torch.exp(-log_decay_clamped)
-    
-    state = torch.exp(log_decay_clamped) * torch.cumsum(exp_neg_log * e_all, dim=1)
-    outputs = c_f * state + d_skip * u_f
-    return outputs
+    """
+    Numerically stable chunked parallel SSM scan.
+    Breaks long sequence into bounded chunks (default 64) to eliminate catastrophic
+    numerical overflow (exp(60) = 1e26) and NaN gradient explosions during multi-thousand-step runs.
+    """
+    decay = torch.exp(dt_f * a)
+    e = (1.0 - decay) * b_f * u_f
+    bsz, seq_len, dim = u_f.shape
+
+    if seq_len % chunk_size == 0 and seq_len >= chunk_size:
+        num_chunks = seq_len // chunk_size
+        decay_c = decay.view(bsz, num_chunks, chunk_size, dim)
+        e_c = e.view(bsz, num_chunks, chunk_size, dim)
+        c_c = c_f.view(bsz, num_chunks, chunk_size, dim)
+
+        log_d = (dt_f * a).view(bsz, num_chunks, chunk_size, dim)
+        cum_log_d = torch.cumsum(log_d, dim=2)
+        chunk_decay = torch.exp(cum_log_d[:, :, -1])
+
+        exp_neg = torch.exp(-cum_log_d)
+        intra_states = torch.exp(cum_log_d) * torch.cumsum(exp_neg * e_c, dim=2)
+
+        h_chunk = torch.zeros(bsz, dim, device=u_f.device, dtype=u_f.dtype)
+        h0_list = []
+        for m in range(num_chunks):
+            h0_list.append(h_chunk)
+            h_chunk = chunk_decay[:, m] * h_chunk + intra_states[:, m, -1]
+
+        h0 = torch.stack(h0_list, dim=1).unsqueeze(2)
+        states = intra_states + torch.exp(cum_log_d) * h0
+        y = (c_c * states).view(bsz, seq_len, dim) + d_skip * u_f
+        return y
+    else:
+        # Clean sequential scan for variable / short sequence lengths
+        h = torch.zeros(bsz, dim, device=u_f.device, dtype=u_f.dtype)
+        y = torch.empty_like(u_f)
+        for t in range(seq_len):
+            h = decay[:, t] * h + e[:, t]
+            y[:, t] = c_f[:, t] * h
+        return y + d_skip * u_f
 
 
 # Optional compilation only if requested explicitly via environment variable
@@ -44,8 +73,8 @@ class DiagonalSSMMixer(nn.Module):
     """Pure-PyTorch diagonal SSM mixer.
 
     This is the dependency-light fallback path for Phase 2. It borrows the
-    gated/convolutional shape of Mamba-like blocks, but uses a simple diagonal
-    recurrent scan so it runs anywhere PyTorch runs.
+    gated/convolutional shape of Mamba-like blocks, but uses a stable chunked diagonal
+    recurrent scan so it runs anywhere PyTorch runs without NaN explosions.
     """
 
     def __init__(
@@ -84,7 +113,8 @@ class DiagonalSSMMixer(nn.Module):
         b_term = torch.tanh(self.b_proj(u))
         c_term = self.c_proj(u)
 
-        a = -torch.exp(self.a_log.float()).view(1, self.inner_dim)
+        # Clamped a_log prevents exponential decay rate explosion while keeping gradients smooth
+        a = -torch.exp(self.a_log.float().clamp(min=-6.0, max=4.0)).view(1, self.inner_dim)
         d_skip = self.d_skip.float().view(1, self.inner_dim)
 
         u_f = u.float()

@@ -166,13 +166,21 @@ def build_optimizer(model: torch.nn.Module, cfg: dict) -> HybridMuonAdamW:
     ) if muon_params else None
 
     betas = tuple(float(x) for x in cfg.get("adamw_betas", [0.9, 0.95]))
+    adamw_lr = peak_lr * float(cfg.get("adamw_lr_multiplier", 1.0))
+    # Exempt 1D parameters (RMSNorm weights, biases, a_log, d_skip) from weight decay
+    decay_params = [p for p in adamw_params if p.ndim >= 2]
+    nodecay_params = [p for p in adamw_params if p.ndim < 2]
+    adamw_groups = []
+    if decay_params:
+        adamw_groups.append({"params": decay_params, "weight_decay": weight_decay, "lr": adamw_lr})
+    if nodecay_params:
+        adamw_groups.append({"params": nodecay_params, "weight_decay": 0.0, "lr": adamw_lr})
+
     adamw = torch.optim.AdamW(
-        adamw_params,
-        lr=peak_lr * float(cfg.get("adamw_lr_multiplier", 1.0)),
+        adamw_groups,
         betas=betas,
         eps=float(cfg.get("adamw_eps", 1e-8)),
-        weight_decay=weight_decay,
-    ) if adamw_params else None
+    ) if adamw_groups else None
     return HybridMuonAdamW(muon, adamw)
 
 

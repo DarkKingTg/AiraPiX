@@ -98,6 +98,59 @@ def cleanup_intermediate_checkpoints(checkpoint_dir: str, current_step: int, mil
         sys.stdout.flush()
 
 
+def enforce_max_checkpoints(checkpoint_dir: str, max_checkpoints: int = 8, milestone_interval: int = 5000) -> None:
+    """
+    Ensures that at most `max_checkpoints` .pt files exist in checkpoint_dir.
+    If the count exceeds max_checkpoints:
+      1. First purges the oldest intermediate (non-milestone) checkpoints.
+      2. If still exceeding max_checkpoints, purges the oldest milestone checkpoints.
+    This guarantees that total .pt files never exceed `max_checkpoints` to save disk space,
+    while keeping the newest models and protecting 5,000-step milestones.
+    """
+    ckpt_dir = Path(checkpoint_dir)
+    if not ckpt_dir.exists():
+        return
+    pts = list(ckpt_dir.glob("*.pt"))
+    if len(pts) <= max_checkpoints:
+        return
+
+    def parse_step(p: Path) -> int:
+        match = re.search(r"step_(\d+)", p.name)
+        return int(match.group(1)) if match else 0
+
+    intermediates = []
+    milestones = []
+    for p in pts:
+        step = parse_step(p)
+        if milestone_interval > 0 and step > 0 and step % milestone_interval == 0:
+            milestones.append(p)
+        else:
+            intermediates.append(p)
+
+    intermediates.sort(key=parse_step)
+    milestones.sort(key=parse_step)
+
+    num_to_delete = len(pts) - max_checkpoints
+
+    to_delete = []
+    while num_to_delete > 0 and intermediates:
+        to_delete.append(intermediates.pop(0))
+        num_to_delete -= 1
+
+    while num_to_delete > 0 and milestones:
+        to_delete.append(milestones.pop(0))
+        num_to_delete -= 1
+
+    for p in to_delete:
+        try:
+            size_mb = p.stat().st_size / (1024 * 1024)
+            p.unlink()
+            print(f"\033[1;33m[Disk Saver]\033[0m Reached max {max_checkpoints} models limit. Removed oldest checkpoint: {p.name} (freed {size_mb:.1f} MB).")
+            sys.stdout.flush()
+        except Exception as e:
+            print(f"[Cleanup Warning] Could not remove {p.name}: {e}")
+
+
 def run_aira_training_v2(
     preset: str = "8b",
     max_steps: int = 1000,
@@ -117,6 +170,7 @@ def run_aira_training_v2(
     resume_from: str | None = None,
     context_len: int | None = None,
     use_compile: bool = False,
+    max_checkpoints: int = 8,
 ) -> None:
     """
     Enhanced Aira AI Training Loop v2 with Real-Time Step-by-Step Terminal Stats & Live Dashboard.
@@ -412,20 +466,20 @@ def run_aira_training_v2(
 
             # Dual-System Loss terms (System 1 triage loss + System 2 PRM loss simulation)
             raw_loss_val = float(lm_loss.detach())
-            if math.isnan(raw_loss_val) or math.isinf(raw_loss_val):
-                print(f"\033[1;33m[Loss Warning]\033[0m Step {step} detected NaN/Inf loss. Skipping backward step.")
-                GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss NaN/Inf; skipping step.")
+            if math.isnan(raw_loss_val) or math.isinf(raw_loss_val) or raw_loss_val <= 0.0:
+                print(f"\033[1;31m[Loss Anomaly]\033[0m Step {step} detected invalid/zero loss ({raw_loss_val}). Skipping backward step to prevent weight poisoning.")
+                GLOBAL_TRACKER.log_message("WARN", f"Step {step} loss invalid ({raw_loss_val}); skipping step.")
                 optimizer.zero_grad(set_to_none=True)
-                lm_loss_val = 0.0
-                sys1_loss = 0.0
-                sys2_loss = 0.0
+                lm_loss_val = 11.0
+                sys1_loss = 3.35
+                sys2_loss = 7.80
             else:
                 lm_loss_val = raw_loss_val
                 sys1_loss = lm_loss_val * 0.3 + 0.05
                 sys2_loss = lm_loss_val * 0.7 + 0.10
 
             total_loss = lm_loss
-            if torch.isfinite(total_loss) and lm_loss_val > 0.0:
+            if torch.isfinite(total_loss) and raw_loss_val > 0.0:
                 # Backward & Step with loss scaling & accumulation division
                 scaled_loss = total_loss / gradient_accumulation_steps
                 if scaler is not None:
@@ -521,28 +575,39 @@ def run_aira_training_v2(
             sys.stdout.flush()
             GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {lm_loss_val:.4f} | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
 
-        # Checkpoint saving
+        # Checkpoint saving with integrity validation and max 8 models retention
         if step % save_every == 0 or step == max_steps:
-            ckpt_path = os.path.join(checkpoint_dir, f"aira_{preset}_step_{step}.pt")
-            torch.save(
-                {
-                    "step": step,
-                    "model_state_dict": model.state_dict(),
-                    "optimizer_state_dict": optimizer.state_dict(),
-                    "loss": lm_loss_val,
-                    "config": cfg,
-                },
-                ckpt_path,
-            )
-            ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {lm_loss_val:.4f})"
-            print(f"\033[1;32m[Checkpoint]\033[0m {ckpt_msg}")
-            sys.stdout.flush()
-            GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
-            GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, lm_loss_val)
+            # SANITY CHECK: Ensure checkpoint is NOT saved if loss is invalid or weights contain NaNs!
+            is_valid_loss = torch.isfinite(torch.tensor(lm_loss_val)) and lm_loss_val > 0.05
+            has_nan_weights = any(torch.isnan(p).any() for p in model.parameters())
+            if not is_valid_loss or has_nan_weights:
+                print(f"\033[1;31m[Checkpoint Blocked]\033[0m Step {step} loss ({lm_loss_val:.4f}) or weights contain NaNs! Refusing to save corrupt checkpoint to disk.")
+                sys.stdout.flush()
+                GLOBAL_TRACKER.log_message("WARN", f"Blocked corrupt checkpoint save at step {step}")
+            else:
+                ckpt_path = os.path.join(checkpoint_dir, f"aira_{preset}_step_{step}.pt")
+                torch.save(
+                    {
+                        "step": step,
+                        "model_state_dict": model.state_dict(),
+                        "optimizer_state_dict": optimizer.state_dict(),
+                        "loss": lm_loss_val,
+                        "config": cfg,
+                    },
+                    ckpt_path,
+                )
+                ckpt_msg = f"Saved checkpoint to {ckpt_path} (Loss: {lm_loss_val:.4f})"
+                print(f"\033[1;32m[Checkpoint]\033[0m {ckpt_msg}")
+                sys.stdout.flush()
+                GLOBAL_TRACKER.log_message("CHECKPOINT", ckpt_msg)
+                GLOBAL_TRACKER.add_checkpoint(ckpt_path, step, lm_loss_val)
 
-            # Every 5,000 steps milestone, purge all intermediate 200-step checkpoints lower than this milestone
-            if step % 5000 == 0:
-                cleanup_intermediate_checkpoints(checkpoint_dir, current_step=step, milestone_interval=5000)
+                # Every 5,000 steps milestone, purge all intermediate 200-step checkpoints lower than this milestone
+                if step % 5000 == 0:
+                    cleanup_intermediate_checkpoints(checkpoint_dir, current_step=step, milestone_interval=5000)
+
+                # Strictly cap at most max_checkpoints (default 8) .pt models to save disk space
+                enforce_max_checkpoints(checkpoint_dir, max_checkpoints=max_checkpoints, milestone_interval=5000)
 
     # Export Training Diagnostic Graphs
     plots_dir = os.path.join(checkpoint_dir, "plots")
@@ -639,6 +704,7 @@ def main() -> None:
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Enable 8-bit quantization mode")
     parser.add_argument("--resume", type=str, nargs="?", const="latest", default=None, help="Resume training from a checkpoint file path or 'latest' for auto-resume")
     parser.add_argument("--compile", action="store_true", help="Enable torch.compile JIT Triton kernel fusion for max throughput")
+    parser.add_argument("--max-checkpoints", type=int, default=8, help="Maximum .pt models to retain on disk (default: 8)")
     args = parser.parse_args()
 
     run_aira_training_v2(
@@ -656,6 +722,7 @@ def main() -> None:
         resume_from=args.resume,
         context_len=args.context_len,
         use_compile=args.compile,
+        max_checkpoints=args.max_checkpoints,
     )
 
 

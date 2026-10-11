@@ -122,6 +122,7 @@ def main() -> None:
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Use 8-bit quantization streaming")
     parser.add_argument("--use-qlora", "--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning")
     parser.add_argument("--colab", action="store_true", default=True, help="Colab mode indicator flag")
+    parser.add_argument("--max-checkpoints", type=int, default=8, help="Maximum .pt models to retain on disk (default: 8)")
     args = parser.parse_args()
 
     print(f"\n\033[1;35m============================================================\033[0m")
@@ -193,6 +194,7 @@ def main() -> None:
         use_qlora=args.use_qlora,
         load_in_4bit=args.load_in_4bit,
         colab_mode=in_colab,
+        max_checkpoints=args.max_checkpoints,
     )
 
 
