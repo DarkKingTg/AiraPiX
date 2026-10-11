@@ -290,15 +290,20 @@ def run_aira_training_v2(
     # Direct AMP autocast handling (GradScaler not needed for FP16/BF16 with Muon)
     scaler = None
 
-    model = AiraForCausalLM(cfg).to(device=device, dtype=model_dtype)
-    num_params = count_parameters(model)
+    raw_model = AiraForCausalLM(cfg).to(device=device, dtype=model_dtype)
+    num_params = count_parameters(raw_model)
+    model = raw_model
     
     if use_compile and device == "cuda":
-        try:
-            print("\033[1;36m[Compile]\033[0m JIT compiling model with torch.compile...")
-            model = torch.compile(model)
-        except Exception as comp_err:
-            print(f"\033[1;33m[Compile Notice]\033[0m torch.compile skipped: {comp_err}. Continuing in standard mode.")
+        if sys.platform == "win32":
+            print("\033[1;33m[Compile Notice]\033[0m torch.compile Inductor requires Linux/WSL2 (Windows host lacks native Triton). Running in high-performance PyTorch native mode.")
+        else:
+            try:
+                print("\033[1;36m[Compile]\033[0m JIT compiling model forward with torch.compile...")
+                model = torch.compile(raw_model)
+            except Exception as comp_err:
+                print(f"\033[1;33m[Compile Notice]\033[0m torch.compile skipped: {comp_err}. Continuing in standard mode.")
+                model = raw_model
     
     print(f"\033[1;35m[Model Spec]\033[0m Preset: \033[1;37m{target_preset.upper()}\033[0m | Params: \033[1;37m{num_params:,}\033[0m | Layers: \033[1;37m{cfg.n_layers}\033[0m | d_model: \033[1;37m{cfg.d_model}\033[0m | Master Dtype: \033[1;37m{model_dtype}\033[0m | AMP Dtype: \033[1;37m{amp_dtype}\033[0m")
     print(f"\033[1;35m[Architecture]\033[0m Schedule: \033[1;37m3 Recurrent SSM : 1 MLA Global Attention\033[0m | MoE Experts: \033[1;37m1 Shared + 4 Routed (Top-1)\033[0m | MTP Heads: \033[1;37m2\033[0m")
