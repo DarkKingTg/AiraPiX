@@ -94,11 +94,11 @@
     <text x="15" y="21" class="card-title" fill="#00f2fe">[STAGE 1A] AFFECTIVE THEORY OF MIND (ToM)</text>
     <text x="440" y="21" class="badge" fill="#38bdf8">SYSTEM 1 REFLEX</text>
     
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#38bdf8">&bull; 8 Affective Dimensions:</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; 8 Affective Dimensions:</text>
     <text x="155" y="55" class="text-body">Joy, Frustration, Burnout, Imposter Syndrome, Crisis, Fear, Confusion, Urgency</text>
-    <text x="15" y="77" class="text-body" font-weight="600" fill="#38bdf8">&bull; Epistemic Perception:</text>
+    <text x="15" y="77" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Epistemic Perception:</text>
     <text x="155" y="77" class="text-body">Detects unstated needs, emotional valence [-1.0..+1.0], and arousal intensity</text>
-    <text x="15" y="99" class="text-body" font-weight="600" fill="#38bdf8">&bull; Sub-50ms Triage:</text>
+    <text x="15" y="99" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Sub-50ms Triage:</text>
     <text x="155" y="99" class="text-body">Non-autoregressive intent extraction directly conditions System 2 directives</text>
     <text x="15" y="125" class="text-dim">Output: Directs internal thinking mode [BALANCED | DELIBERATE | GROUNDING | CRISIS]</text>
   </g>
@@ -111,15 +111,15 @@
     <text x="430" y="21" class="badge" fill="#34d399">EPISTEMIC SAFETY</text>
 
     <!-- User Track Visual Bar -->
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#34d399">&bull; Primary User Track:</text>
-    <text x="155" y="55" class="text-body">Base: 50% &rarr; Max Ceiling: 100% (Strengthened via shared milestones)</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#34d399">&#x2022; Primary User Track:</text>
+    <text x="155" y="55" class="text-body">Base: 50% &#x2192; Max Ceiling: 100% (Strengthened via shared milestones)</text>
     <rect x="155" y="65" width="220" height="10" rx="5" fill="#1e293b"/>
     <rect x="155" y="65" width="180" height="10" rx="5" fill="url(#greenGrad)"/>
     <text x="385" y="74" class="badge" fill="#34d399">82.5% [DYNAMIC]</text>
 
     <!-- Peer AI Track Visual Bar -->
-    <text x="15" y="95" class="text-body" font-weight="600" fill="#f87171">&bull; Peer AI Model Track:</text>
-    <text x="155" y="95" class="text-body">Base: 20% &rarr; Hard Cap: 60% (Protection against hallucinations)</text>
+    <text x="15" y="95" class="text-body" font-weight="600" fill="#f87171">&#x2022; Peer AI Model Track:</text>
+    <text x="155" y="95" class="text-body">Base: 20% &#x2192; Hard Cap: 60% (Protection against hallucinations)</text>
     <rect x="155" y="105" width="220" height="10" rx="5" fill="#1e293b"/>
     <rect x="155" y="105" width="132" height="10" rx="5" fill="#ef4444"/>
     <text x="385" y="114" class="badge" fill="#f87171">60.0% [LOCKED CAP]</text>
@@ -135,13 +135,13 @@
     <text x="15" y="21" class="card-title" fill="#c471ed">[STAGE 2A] DOYA 4-CHEMICALS &amp; SOMATIC MARKERS</text>
     <text x="440" y="21" class="badge" fill="#e879f9">EMOTIONAL CORE</text>
 
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#e879f9">&bull; Dopamine &amp; Serotonin:</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#e879f9">&#x2022; Dopamine &amp; Serotonin:</text>
     <text x="175" y="55" class="text-body">Reward anticipation, curiosity, and emotional stability baselines</text>
-    <text x="15" y="77" class="text-body" font-weight="600" fill="#e879f9">&bull; Noradrenaline &amp; Cortisol:</text>
+    <text x="15" y="77" class="text-body" font-weight="600" fill="#e879f9">&#x2022; Noradrenaline &amp; Cortisol:</text>
     <text x="175" y="77" class="text-body">Vigilance, error anomaly detection, and crisis stress modulation</text>
-    <text x="15" y="99" class="text-body" font-weight="600" fill="#e879f9">&bull; Oxytocin &amp; Drives:</text>
+    <text x="15" y="99" class="text-body" font-weight="600" fill="#e879f9">&#x2022; Oxytocin &amp; Drives:</text>
     <text x="175" y="99" class="text-body">Relational bonding + Stamina, Curiosity, Flow State tracking</text>
-    <text x="15" y="125" class="text-body" font-weight="600" fill="#f43f5e">&bull; Damasio Somatic Markers:</text>
+    <text x="15" y="125" class="text-body" font-weight="600" fill="#f43f5e">&#x2022; Damasio Somatic Markers:</text>
     <text x="175" y="125" class="text-body">Intuitive gut check; flags unsafe, destructive or deceptive ops</text>
     <text x="15" y="152" class="text-dim">Homeostasis: Decays toward baselines per turn; modulates temperature &amp; top-k</text>
   </g>
@@ -153,13 +153,13 @@
     <text x="15" y="21" class="card-title" fill="#38bdf8">[STAGE 2B] HEBBIAN PLASTICITY &amp; OBSIDIAN VAULT</text>
     <text x="430" y="21" class="badge" fill="#38bdf8">LONG-TERM MEMORY</text>
 
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#38bdf8">&bull; Hebbian Online Learning:</text>
-    <text x="175" y="55" class="text-body">Associative matrix &Delta;W = lr &times; reward; zero-backprop runtime updates</text>
-    <text x="15" y="77" class="text-body" font-weight="600" fill="#38bdf8">&bull; Sub-ms BM25 Vault Search:</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Hebbian Online Learning:</text>
+    <text x="175" y="55" class="text-body">Associative matrix &#x0394;W = lr &#x00D7; reward; zero-backprop runtime updates</text>
+    <text x="15" y="77" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Sub-ms BM25 Vault Search:</text>
     <text x="175" y="77" class="text-body">In-memory inverted index weighted by Damasio somatic dopamine</text>
-    <text x="15" y="99" class="text-body" font-weight="600" fill="#38bdf8">&bull; Cross-Chat Journaling:</text>
+    <text x="15" y="99" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Cross-Chat Journaling:</text>
     <text x="175" y="99" class="text-body">Saves YAML logs to C:\Users\WaveWalker\Aira-Vault\Conversations\</text>
-    <text x="15" y="125" class="text-body" font-weight="600" fill="#38bdf8">&bull; Daily Note Integration:</text>
+    <text x="15" y="125" class="text-body" font-weight="600" fill="#38bdf8">&#x2022; Daily Note Integration:</text>
     <text x="175" y="125" class="text-body">Appends session recaps with [[wikilinks]] into 01 - Daily Notes</text>
     <text x="15" y="152" class="text-dim">Real-time persistence: State saved to Aira_Synaptic_Memory.json across restarts</text>
   </g>
@@ -175,18 +175,18 @@
     <g transform="translate(20, 45)">
       <rect width="320" height="105" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
       <text x="15" y="22" class="badge" fill="#38bdf8">NATIVE DELIBERATION HEAD</text>
-      <text x="15" y="44" class="text-body">&bull; Vocab: 24,000 ByteLevel BPE</text>
-      <text x="15" y="64" class="text-body">&bull; Native Tokens: &lt;think&gt; (4) / &lt;/think&gt; (5)</text>
-      <text x="15" y="86" class="text-body">&bull; Empathy Guidance Injected into Prompt</text>
+      <text x="15" y="44" class="text-body">&#x2022; Vocab: 24,000 ByteLevel BPE</text>
+      <text x="15" y="64" class="text-body">&#x2022; Native Tokens: &lt;think&gt; (4) / &lt;/think&gt; (5)</text>
+      <text x="15" y="86" class="text-body">&#x2022; Empathy Guidance Injected into Prompt</text>
     </g>
 
     <!-- Sub-Block 2: Interleaved Architecture -->
     <g transform="translate(360, 45)">
       <rect width="360" height="105" rx="8" fill="#1e293b" stroke="#818cf8" stroke-width="1.5"/>
       <text x="15" y="22" class="badge" fill="#818cf8">INTERLEAVED LAYER BLOCKS</text>
-      <text x="15" y="44" class="text-body">&bull; Block 4k: Multi-Head Latent Attention (MLA)</text>
+      <text x="15" y="44" class="text-body">&#x2022; Block 4k: Multi-Head Latent Attention (MLA)</text>
       <text x="25" y="62" class="text-dim">Low-Rank KV Compression (93% VRAM savings) + RoPE</text>
-      <text x="15" y="82" class="text-body">&bull; Block 4k+1..3: Diagonal State Space Model (SSM)</text>
+      <text x="15" y="82" class="text-body">&#x2022; Block 4k+1..3: Diagonal State Space Model (SSM)</text>
       <text x="25" y="98" class="text-dim">O(N) Linear-complexity recurrent context mixer</text>
     </g>
 
@@ -194,9 +194,9 @@
     <g transform="translate(740, 45)">
       <rect width="340" height="105" rx="8" fill="#1e293b" stroke="#475569" stroke-width="1"/>
       <text x="15" y="22" class="badge" fill="#34d399">EXECUTION &amp; LM HEAD</text>
-      <text x="15" y="44" class="text-body">&bull; SwiGLU FFN: 4.0x hidden expansion</text>
-      <text x="15" y="64" class="text-body">&bull; Pre-RMSNorm across all hidden layers</text>
-      <text x="15" y="86" class="text-body">&bull; Tied Embeddings with Output Head LM</text>
+      <text x="15" y="44" class="text-body">&#x2022; SwiGLU FFN: 4.0x hidden expansion</text>
+      <text x="15" y="64" class="text-body">&#x2022; Pre-RMSNorm across all hidden layers</text>
+      <text x="15" y="86" class="text-body">&#x2022; Tied Embeddings with Output Head LM</text>
     </g>
   </g>
 
@@ -208,12 +208,12 @@
     <text x="15" y="21" class="card-title" fill="#f59e0b">[STRATEGY 7] ANTI-CATASTROPHIC FORGETTING (EWC &amp; REPLAY)</text>
     <text x="440" y="21" class="badge" fill="#fbbf24">STABILITY</text>
 
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#fbbf24">&bull; 80/20 Experience Replay Mixture:</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#fbbf24">&#x2022; 80/20 Experience Replay Mixture:</text>
     <text x="215" y="55" class="text-body">80% foundational tokens + 20% fresh experience</text>
-    <text x="15" y="77" class="text-body" font-weight="600" fill="#fbbf24">&bull; Elastic Weight Consolidation:</text>
+    <text x="15" y="77" class="text-body" font-weight="600" fill="#fbbf24">&#x2022; Elastic Weight Consolidation:</text>
     <text x="215" y="77" class="text-body">Fisher Information diagonal F_i protects core weights</text>
-    <text x="15" y="99" class="text-body" font-weight="600" fill="#fbbf24">&bull; Quadratic Penalty Loss:</text>
-    <text x="215" y="99" class="text-body">L_EWC = (lambda/2) * sum( F_i * (&theta;_i - &theta;*_i)^2 )</text>
+    <text x="15" y="99" class="text-body" font-weight="600" fill="#fbbf24">&#x2022; Quadratic Penalty Loss:</text>
+    <text x="215" y="99" class="text-body">L_EWC = (lambda/2) * sum( F_i * (&#x03B8;_i - &#x03B8;*_i)^2 )</text>
     <text x="15" y="125" class="text-dim">Result: Absorbs new domain knowledge without forgetting core code &amp; math</text>
   </g>
 
@@ -224,12 +224,12 @@
     <text x="15" y="21" class="card-title" fill="#a855f7">[STRATEGY 5] AUTONOMOUS DREAM CONSOLIDATION CYCLES</text>
     <text x="440" y="21" class="badge" fill="#c084fc">PLASTICITY</text>
 
-    <text x="15" y="55" class="text-body" font-weight="600" fill="#c084fc">&bull; Vault Seed Harvesting:</text>
+    <text x="15" y="55" class="text-body" font-weight="600" fill="#c084fc">&#x2022; Vault Seed Harvesting:</text>
     <text x="180" y="55" class="text-body">Pulls unstated needs &amp; challenges from Conversations/</text>
-    <text x="15" y="77" class="text-body" font-weight="600" fill="#c084fc">&bull; System 2 Self-Play Synthesis:</text>
+    <text x="15" y="77" class="text-body" font-weight="600" fill="#c084fc">&#x2022; System 2 Self-Play Synthesis:</text>
     <text x="180" y="77" class="text-body">Generates step-by-step &lt;think&gt; deliberation traces</text>
-    <text x="15" y="99" class="text-body" font-weight="600" fill="#c084fc">&bull; Somatic Filtering &amp; Ingestion:</text>
-    <text x="180" y="99" class="text-body">Filters hallucinations (valence &ge; 0.60) &rarr; training buffer</text>
+    <text x="15" y="99" class="text-body" font-weight="600" fill="#c084fc">&#x2022; Somatic Filtering &amp; Ingestion:</text>
+    <text x="180" y="99" class="text-body">Filters hallucinations (valence &#x2265; 0.60) &#x2192; training buffer</text>
     <text x="15" y="125" class="text-dim">Command: Triggerable via /dream [count] in chat CLI or during GPU idle time</text>
   </g>
 
