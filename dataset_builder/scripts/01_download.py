@@ -4,7 +4,14 @@ import argparse
 import json
 from itertools import islice
 from pathlib import Path
-import sys
+import os
+import socket
+
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
+socket.setdefaulttimeout(45.0)
 
 sys.path.append(str(Path(__file__).resolve().parent))
 from common import enabled_datasets, ensure_dirs, load_config, pipeline_path
@@ -92,8 +99,10 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
             row_dict["_format"] = spec["format"]
             f.write(json.dumps(row_dict, ensure_ascii=False, sort_keys=True) + "\n")
             count += 1
-            if count % 5000 == 0:
+            if count % 10000 == 0:
                 f.flush()
+                target_str = f" / {limit:,}" if limit else ""
+                print(f"  [stream {name}] {count:,}{target_str} rows...", flush=True)
 
     del dataset
     gc.collect()
@@ -103,6 +112,7 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
     except Exception:
         pass
 
+    print(f"[download] {name} finished with {count:,} rows.", flush=True)
     return {"name": name, "raw_path": str(out_path), "records": count}
 
 

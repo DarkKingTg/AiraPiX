@@ -30,7 +30,7 @@ datasets:
     hf_config: wikitext-103-raw-v1
     split: train
     streaming: true
-    sample_limit: 500000
+    sample_limit: 100000
     category: text
     format: plain_text
     fields:
@@ -41,7 +41,7 @@ datasets:
     hf_name: databricks/databricks-dolly-15k
     split: train
     streaming: true
-    sample_limit: 150000
+    sample_limit: 15000
     category: chat
     format: instruction_response
     fields:

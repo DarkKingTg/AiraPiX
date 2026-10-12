@@ -27,12 +27,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    import os
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+
     script_dir = Path(__file__).resolve().parent / "scripts"
     start_index = STAGES.index(args.start_at)
     for stage in STAGES[start_index:]:
         script = script_dir / stage
-        print(f"\n=== {stage} ===")
-        subprocess.run([sys.executable, str(script), "--config", args.config], check=True)
+        print(f"\n=== {stage} ===", flush=True)
+        subprocess.run([sys.executable, str(script), "--config", args.config], env=env, check=True)
 
 
 if __name__ == "__main__":
