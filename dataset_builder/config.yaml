@@ -52,9 +52,10 @@ datasets:
   - name: openorca_sample
     enabled: true
     hf_name: Open-Orca/OpenOrca
+    revision: refs/convert/parquet
     split: train
     streaming: true
-    sample_limit: 500000
+    sample_limit: 100000
     category: reasoning
     format: openorca
     fields:
