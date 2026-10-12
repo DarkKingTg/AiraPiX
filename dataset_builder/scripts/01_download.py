@@ -19,12 +19,18 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
         raise SystemExit("Missing dependency: datasets. Run `pip install -r requirements.txt`.") from exc
 
     name = spec["name"]
+    sample_limit = spec.get("sample_limit")
+    limit = int(sample_limit) if sample_limit is not None else None
+
     out_path = raw_dir / f"{name}.jsonl"
     if out_path.exists() and out_path.stat().st_size > 0:
         with out_path.open("r", encoding="utf-8") as f:
             existing_count = sum(1 for line in f if line.strip())
-        print(f"[download] {name} already exists with {existing_count} rows. Skipping download.")
-        return {"name": name, "raw_path": str(out_path), "records": existing_count}
+        if limit is None or existing_count >= limit:
+            print(f"[download] {name} already exists with {existing_count} rows. Skipping download.")
+            return {"name": name, "raw_path": str(out_path), "records": existing_count}
+        else:
+            print(f"[download] {name} currently has {existing_count:,} rows, but config requests {limit:,}. Re-downloading fresh sample...")
 
     kwargs = {
         "path": spec["hf_name"],
@@ -55,9 +61,6 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
         else:
             raise err
 
-    sample_limit = spec.get("sample_limit")
-    limit = int(sample_limit) if sample_limit is not None else None
-    
     count = 0
     max_retries = 3
     with out_path.open("w", encoding="utf-8", newline="\n") as f:
