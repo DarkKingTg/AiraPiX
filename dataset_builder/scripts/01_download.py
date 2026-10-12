@@ -52,6 +52,18 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
     if spec.get("trust_remote_code"):
         kwargs["trust_remote_code"] = True
 
+    token = os.environ.get("HF_TOKEN")
+    if not token:
+        env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+        if env_path.exists():
+            for line in env_path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("HF_TOKEN="):
+                    token = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    os.environ["HF_TOKEN"] = token
+                    break
+    if token:
+        kwargs["token"] = token
+
     dataset = None
     try:
         dataset = load_dataset(**kwargs)
