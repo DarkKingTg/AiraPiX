@@ -6,6 +6,7 @@ from itertools import islice
 from pathlib import Path
 import os
 import socket
+import sys
 
 try:
     sys.stdout.reconfigure(line_buffering=True)
