@@ -12,6 +12,7 @@ from common import enabled_datasets, ensure_dirs, load_config, pipeline_path
 
 def download_one(spec: dict, raw_dir: Path) -> dict:
     import time
+    import gc
     try:
         from datasets import load_dataset
     except ImportError as exc:
@@ -29,43 +30,75 @@ def download_one(spec: dict, raw_dir: Path) -> dict:
         "path": spec["hf_name"],
         "split": spec.get("split", "train"),
         "streaming": bool(spec.get("streaming", True)),
-        "trust_remote_code": True,
     }
     if spec.get("hf_config"):
         kwargs["name"] = spec["hf_config"]
+    if spec.get("revision"):
+        kwargs["revision"] = spec["revision"]
+    if spec.get("trust_remote_code"):
+        kwargs["trust_remote_code"] = True
 
-    max_retries = 3
     dataset = None
     try:
         dataset = load_dataset(**kwargs)
     except Exception as err:
-        if kwargs.get("streaming"):
-            print(f"  [streaming fallback] Streaming failed ({err}). Trying streaming=False...")
-            kwargs["streaming"] = False
-            dataset = load_dataset(**kwargs)
+        # If loading the default branch fails on streaming (e.g. monolithic json), try HF parquet mirror
+        if kwargs.get("streaming") and "revision" not in kwargs:
+            print(f"  [fallback] Primary stream failed ({err}). Trying HF Parquet mirror...")
+            fallback_kw = dict(kwargs)
+            fallback_kw["revision"] = "refs/convert/parquet"
+            try:
+                dataset = load_dataset(**fallback_kw)
+                kwargs = fallback_kw
+            except Exception:
+                raise err
         else:
             raise err
 
     sample_limit = spec.get("sample_limit")
+    limit = int(sample_limit) if sample_limit is not None else None
     
     count = 0
+    max_retries = 3
     with out_path.open("w", encoding="utf-8", newline="\n") as f:
-        rows = dataset if sample_limit is None else islice(dataset, int(sample_limit))
-        for attempt in range(1, max_retries + 1):
+        iterator = iter(dataset)
+        consecutive_errors = 0
+        while limit is None or count < limit:
             try:
-                for row in rows:
-                    row_dict = dict(row)
-                    row_dict["_source_name"] = name
-                    row_dict["_category"] = spec["category"]
-                    row_dict["_format"] = spec["format"]
-                    f.write(json.dumps(row_dict, ensure_ascii=False, sort_keys=True) + "\n")
-                    count += 1
+                row = next(iterator)
+                consecutive_errors = 0
+            except StopIteration:
                 break
-            except Exception as err:
-                if attempt == max_retries:
-                    raise err
-                print(f"  [retry {attempt}/{max_retries}] Error streaming rows ({err}). Retrying in {attempt * 3}s...")
-                time.sleep(attempt * 3)
+            except Exception as stream_err:
+                consecutive_errors += 1
+                if consecutive_errors > max_retries:
+                    print(f"  [stream stop] Exceeded retries on '{name}' ({stream_err}). Stopping at {count} rows.")
+                    break
+                print(f"  [retry {consecutive_errors}/{max_retries}] Stream pause ({stream_err}). Retrying in 2s...")
+                time.sleep(2)
+                try:
+                    dataset = load_dataset(**kwargs)
+                    iterator = iter(dataset)
+                    row = next(iterator)
+                except Exception:
+                    continue
+
+            row_dict = dict(row)
+            row_dict["_source_name"] = name
+            row_dict["_category"] = spec["category"]
+            row_dict["_format"] = spec["format"]
+            f.write(json.dumps(row_dict, ensure_ascii=False, sort_keys=True) + "\n")
+            count += 1
+            if count % 5000 == 0:
+                f.flush()
+
+    del dataset
+    gc.collect()
+    try:
+        import pyarrow
+        pyarrow.default_memory_pool().release_unused()
+    except Exception:
+        pass
 
     return {"name": name, "raw_path": str(out_path), "records": count}
 

@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from airapix.model.config import config_from_preset
 from airapix.model.model import AiraForCausalLM, count_parameters
-from airapix.training.optimizer import build_optimizer
+from airapix.training.optimizer import build_optimizer, set_optimizer_lr
 from airapix.training.schedule import cosine_with_warmup
 from airapix.training.live_dashboard import start_dashboard_server, GLOBAL_TRACKER
 
@@ -105,7 +105,7 @@ def find_latest_healthy_checkpoint(checkpoint_dir: str, before_step: int | None 
                     continue
             sd = state.get("model_state_dict", state.get("model", state))
             if isinstance(sd, dict):
-                has_bad_weights = any(not torch.isfinite(w).all() for w in sd.values() if isinstance(w, torch.Tensor))
+                has_bad_weights = any(not torch.isfinite(w).all() or w.abs().max() > 50.0 for w in sd.values() if isinstance(w, torch.Tensor))
                 if has_bad_weights:
                     continue
             return p
@@ -240,6 +240,7 @@ def run_aira_training_v2(
     batch_size: int = 2,
     gradient_accumulation_steps: int = 16,
     peak_lr: float = 3e-4,
+    muon_lr: float = 0.02,
     warmup_steps: int = 100,
     save_every: int = 200,
     log_every: int = 1,
@@ -392,6 +393,7 @@ def run_aira_training_v2(
         model,
         {
             "peak_lr": peak_lr,
+            "muon_lr": muon_lr,
             "weight_decay": 0.01,
             "adamw_betas": [0.9, 0.95],
             "adamw_eps": 1e-8,
@@ -507,15 +509,23 @@ def run_aira_training_v2(
     start_time = time.time()
     total_tokens_processed = 0
     consecutive_anomalies = 0
+    ema_loss: float | None = None
+    accum_loss_sum: float = 0.0
+    accum_count: int = 0
 
     # 5. Main Training Loop
     for step in range(start_step, max_steps + 1):
         step_start = time.time()
 
-        # Compute LR
+        # Compute LR with separate Muon and AdamW scaling
         lr = cosine_with_warmup(step=step, max_steps=max_steps, warmup_steps=warmup_steps, peak_lr=peak_lr, min_lr_ratio=0.1)
-        for param_group in optimizer.param_groups:
-            param_group["lr"] = lr
+        decay_scale = lr / max(peak_lr, 1e-12)
+        curr_muon_lr, curr_adamw_lr = set_optimizer_lr(
+            optimizer,
+            decay_scale=decay_scale,
+            peak_muon_lr=muon_lr,
+            peak_adamw_lr=peak_lr,
+        )
 
         # Fetch real batch input with robust dataset stream auto-recovery
         seq_len = cfg.context_len
@@ -584,6 +594,13 @@ def run_aira_training_v2(
                 sys1_loss = lm_loss_val * 0.3 + 0.05
                 sys2_loss = lm_loss_val * 0.7 + 0.10
 
+            accum_loss_sum += lm_loss_val
+            accum_count += 1
+            if ema_loss is None:
+                ema_loss = lm_loss_val
+            else:
+                ema_loss = 0.95 * ema_loss + 0.05 * lm_loss_val
+
             total_loss = lm_loss
             if torch.isfinite(total_loss) and raw_loss_val > 0.0:
                 # Backward & Step with loss scaling & accumulation division
@@ -604,6 +621,9 @@ def run_aira_training_v2(
 
         is_grad_step = (step % gradient_accumulation_steps == 0) or (step == max_steps)
         if is_grad_step:
+            step_avg_loss = accum_loss_sum / max(accum_count, 1)
+            accum_loss_sum = 0.0
+            accum_count = 0
             if scaler is not None:
                 scaler.unscale_(optimizer)
                 grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -649,9 +669,10 @@ def run_aira_training_v2(
         if step % 50 == 0:
             val_loss_sample = lm_loss_val + 0.08
 
+        display_loss = ema_loss if ema_loss is not None else lm_loss_val
         GLOBAL_TRACKER.record_step(
             step=step,
-            loss=lm_loss_val,
+            loss=display_loss,
             lr=lr,
             tokens_per_sec=tokens_per_sec,
             vram_used_gb=vram_used_gb,
@@ -665,27 +686,28 @@ def run_aira_training_v2(
         if step == 1 or step % log_every == 0 or step == max_steps:
             pct = (step / max_steps) * 100.0
             grad_marker = "\033[1;32m[UPDATED]\033[0m" if is_grad_step else f"\033[1;30m[ACCUM {step % gradient_accumulation_steps}/{gradient_accumulation_steps}]\033[0m"
-            safe_ppl = math.exp(min(lm_loss_val, 20.0))
+            safe_ppl = math.exp(min(display_loss, 20.0))
             msg = (
                 f"\033[1;36m[Step {step:5d}/{max_steps} ({pct:5.1f}%)]\033[0m "
-                f"Loss: \033[1;37m{lm_loss_val:.4f}\033[0m | "
+                f"Loss: \033[1;37m{lm_loss_val:.4f}\033[0m "
+                f"(EMA: \033[1;32m{display_loss:.4f}\033[0m) | "
                 f"Sys1: \033[0;32m{sys1_loss:.3f}\033[0m | "
                 f"Sys2: \033[0;31m{sys2_loss:.3f}\033[0m | "
                 f"PPL: \033[1;33m{safe_ppl:6.2f}\033[0m | "
-                f"LR: \033[0;36m{lr:.2e}\033[0m | "
+                f"LR: \033[0;36mA:{curr_adamw_lr:.1e}|M:{curr_muon_lr:.1e}\033[0m | "
                 f"Speed: \033[1;32m{tokens_per_sec:6.1f} tok/s\033[0m ({step_ms:5.1f}ms) | "
                 f"VRAM: \033[1;33m{vram_used_gb:.2f}GB\033[0m/\033[0;33m{vram_res_gb:.2f}GB\033[0m | "
                 f"ETA: {eta_str} {grad_marker}"
             )
             print(msg)
             sys.stdout.flush()
-            GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {lm_loss_val:.4f} | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
+            GLOBAL_TRACKER.log_message("STEP", f"Step {step}/{max_steps} | Loss: {lm_loss_val:.4f} (EMA: {display_loss:.4f}) | Speed: {tokens_per_sec:.1f} tok/s | VRAM: {vram_used_gb:.2f}GB")
 
         # Checkpoint saving with integrity validation and max 8 models retention
         if step % save_every == 0 or step == max_steps:
             # SANITY CHECK: Ensure checkpoint is NOT saved if loss is invalid or weights contain NaNs!
             is_valid_loss = torch.isfinite(torch.tensor(raw_loss_val)) and raw_loss_val > 0.05 and consecutive_anomalies == 0
-            has_bad_weights = any(not torch.isfinite(p).all() for p in model.parameters())
+            has_bad_weights = any(not torch.isfinite(p).all() or p.abs().max() > 50.0 for p in model.parameters())
             if not is_valid_loss or has_bad_weights:
                 print(f"\033[1;31m[Checkpoint Blocked]\033[0m Step {step} raw loss ({raw_loss_val:.4f}) invalid or weights non-finite! Refusing to save corrupt checkpoint to disk.")
                 sys.stdout.flush()
@@ -802,6 +824,7 @@ def main() -> None:
     parser.add_argument("--context-len", type=int, default=1024, help="Sequence context length (default: 1024 for 2.5GB VRAM budget)")
     parser.add_argument("--accum", "--grad-accum", type=int, default=5, help="Gradient accumulation steps (e.g. 5 for ~10.2k tokens/step with BS=2, Len=1024)")
     parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
+    parser.add_argument("--muon-lr", type=float, default=0.02, help="Peak learning rate for 2D weight matrices optimized by Muon (default: 0.02)")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--log-every", type=int, default=1, help="Steps frequency for terminal logging (default: 1 for every step)")
     parser.add_argument("--force", action="store_true", help="Force preset selection without physical VRAM auto-scaling override")
@@ -822,6 +845,7 @@ def main() -> None:
         batch_size=args.batch_size,
         gradient_accumulation_steps=args.accum,
         peak_lr=args.peak_lr,
+        muon_lr=args.muon_lr,
         warmup_steps=args.warmup_steps,
         save_every=args.save_every,
         dashboard_port=args.port,

@@ -93,10 +93,11 @@ class Muon(torch.optim.Optimizer):
                 if update.ndim == 2:
                     update = zeropower_via_newtonschulz5(update, steps=ns_steps)
                     scale = math.sqrt(max(1.0, update.size(0) / max(1, update.size(1))))
-                    update = update * scale
+                    update = (update * scale).clamp(min=-5.0, max=5.0)
                 p.add_(update.to(dtype=p.dtype), alpha=-lr)
                 if not torch.isfinite(p).all():
                     p.nan_to_num_(nan=0.0)
+                p.clamp_(min=-50.0, max=50.0)
         return loss
 
 
@@ -148,6 +149,11 @@ def split_muon_adamw_params(model: torch.nn.Module):
             and "router" not in name
             and "mtp_heads" not in name
             and "norm" not in name
+            and "dt_proj" not in name
+            and "b_proj" not in name
+            and "c_proj" not in name
+            and "a_log" not in name
+            and "d_skip" not in name
         )
         if use_muon:
             muon_params.append(param)
@@ -157,23 +163,30 @@ def split_muon_adamw_params(model: torch.nn.Module):
 
 
 def build_optimizer(model: torch.nn.Module, cfg: dict) -> HybridMuonAdamW:
-    peak_lr = float(cfg["peak_lr"])
-    weight_decay = float(cfg.get("weight_decay", 0.1))
+    peak_lr = float(cfg.get("peak_lr", 3.5e-4))
+    muon_lr = float(cfg.get("muon_lr", 0.02))
+    weight_decay = float(cfg.get("weight_decay", 0.01))
     muon_params, adamw_params = split_muon_adamw_params(model)
 
     muon = Muon(
         muon_params,
-        lr=peak_lr * float(cfg.get("muon_lr_multiplier", 1.0)),
+        lr=muon_lr,
         momentum=float(cfg.get("muon_momentum", 0.95)),
         weight_decay=weight_decay,
-        ns_steps=int(cfg.get("muon_ns_steps", 5)),
+        ns_steps=int(cfg.get("muon_ns_steps", 2)),
     ) if muon_params else None
 
     betas = tuple(float(x) for x in cfg.get("adamw_betas", [0.9, 0.95]))
-    adamw_lr = peak_lr * float(cfg.get("adamw_lr_multiplier", 1.0))
-    # Exempt 1D parameters (RMSNorm weights, biases, a_log, d_skip) from weight decay
-    decay_params = [p for p in adamw_params if p.ndim >= 2]
-    nodecay_params = [p for p in adamw_params if p.ndim < 2]
+    adamw_lr = float(cfg.get("adamw_lr", peak_lr))
+    # Exempt 1D parameters and sensitive SSM recurrent projections (dt_proj, b_proj, c_proj) from weight decay
+    ssm_recurrent_names = {"dt_proj", "b_proj", "c_proj"}
+    ssm_recurrent_params = {
+        param for name, param in model.named_parameters()
+        if any(target in name for target in ssm_recurrent_names)
+    }
+
+    decay_params = [p for p in adamw_params if p.ndim >= 2 and p not in ssm_recurrent_params]
+    nodecay_params = [p for p in adamw_params if p.ndim < 2 or p in ssm_recurrent_params]
     adamw_groups = []
     if decay_params:
         adamw_groups.append({"params": decay_params, "weight_decay": weight_decay, "lr": adamw_lr})
@@ -188,12 +201,21 @@ def build_optimizer(model: torch.nn.Module, cfg: dict) -> HybridMuonAdamW:
     return HybridMuonAdamW(muon, adamw)
 
 
-def set_optimizer_lr(optimizer: HybridMuonAdamW, base_lr: float, cfg: dict) -> None:
-    muon_mult = float(cfg.get("muon_lr_multiplier", 1.0))
-    adamw_mult = float(cfg.get("adamw_lr_multiplier", 1.0))
+def set_optimizer_lr(
+    optimizer: HybridMuonAdamW,
+    decay_scale: float,
+    peak_muon_lr: float = 0.02,
+    peak_adamw_lr: float = 3.5e-4,
+) -> tuple[float, float]:
+    """Dynamically scales Muon and AdamW learning rates using the scheduler decay ratio."""
+    current_muon_lr = peak_muon_lr * decay_scale
+    current_adamw_lr = peak_adamw_lr * decay_scale
+
     if optimizer.muon is not None:
         for group in optimizer.muon.param_groups:
-            group["lr"] = base_lr * muon_mult
+            group["lr"] = current_muon_lr
     if optimizer.adamw is not None:
         for group in optimizer.adamw.param_groups:
-            group["lr"] = base_lr * adamw_mult
+            group["lr"] = current_adamw_lr
+
+    return current_muon_lr, current_adamw_lr

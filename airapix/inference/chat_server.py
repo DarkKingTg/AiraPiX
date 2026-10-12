@@ -10,6 +10,7 @@ import sys
 import time
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -18,15 +19,21 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from airapix.model.config import config_from_preset
-from airapix.model.model import AiraForCausalLM
+from airapix.model.model import AiraForCausalLM, AiraPrefixCacheManager
 from airapix.training.tokenizer import TokenizerWrapper
+
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
 
 # Global State for Sequential RAM-Saver Execution
 CURRENT_LOADED_MODEL: AiraForCausalLM | None = None
 CURRENT_LOADED_PATH: str | None = None
 GLOBAL_TOKENIZER: TokenizerWrapper | None = None
 GLOBAL_DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+GLOBAL_PREFIX_CACHE = AiraPrefixCacheManager(max_entries=32)
 CHECKPOINT_DIR = Path("runs/checkpoints")
+INFERENCE_LOCK = threading.Lock()
 
 
 def unload_active_model() -> float:
@@ -43,10 +50,11 @@ def unload_active_model() -> float:
 
     if CURRENT_LOADED_MODEL is not None:
         model_name = Path(CURRENT_LOADED_PATH or "model").name
-        print(f"[RAM/VRAM Saver] Unloading active model '{model_name}' from memory...")
+        print(f"[RAM/VRAM Saver] Unloading active model '{model_name}' from memory...", flush=True)
         del CURRENT_LOADED_MODEL
         CURRENT_LOADED_MODEL = None
         CURRENT_LOADED_PATH = None
+        GLOBAL_PREFIX_CACHE.clear()
 
     gc.collect()
 
@@ -57,7 +65,7 @@ def unload_active_model() -> float:
 
     freed_mb = max(0.0, vram_before - vram_after)
     if torch.cuda.is_available():
-        print(f"[RAM/VRAM Saver] Reclaimed memory. Active VRAM now: {vram_after:.1f} MB.")
+        print(f"[RAM/VRAM Saver] Reclaimed memory. Active VRAM now: {vram_after:.1f} MB.", flush=True)
     return round(freed_mb, 1)
 
 
@@ -86,23 +94,40 @@ def load_single_model_on_demand(checkpoint_path: str, preset: str = "125m") -> A
     elif "tiny" in name_lower:
         preset = "tiny"
 
-    cfg = config_from_preset(preset, vocab_size=12000, context_len=1024)
-    model = AiraForCausalLM(cfg)
-
     ckpt_path = Path(checkpoint_path)
+    state = None
     if ckpt_path.is_file():
-        print(f"[Model Loader] Loading weights into memory: {ckpt_path.name} ({preset.upper()})...")
+        print(f"[Model Loader] Loading weights into memory: {ckpt_path.name} ({preset.upper()})...", flush=True)
         try:
             state = torch.load(ckpt_path, map_location=GLOBAL_DEVICE, weights_only=True)
         except Exception:
             state = torch.load(ckpt_path, map_location=GLOBAL_DEVICE, weights_only=False)
 
-        if "model_state_dict" in state:
-            model.load_state_dict(state["model_state_dict"], strict=False)
-        elif "model_state" in state:
-            model.load_state_dict(state["model_state"], strict=False)
-        elif "model" in state:
-            model.load_state_dict(state["model"], strict=False)
+    # Dynamically resolve config: prefer checkpoint config, otherwise inspect state_dict or tokenizer
+    cfg = None
+    if isinstance(state, dict) and "config" in state and state["config"] is not None:
+        cfg = state["config"]
+    else:
+        vocab_size = GLOBAL_TOKENIZER.vocab_size if GLOBAL_TOKENIZER is not None else 24000
+        context_len = 2048
+        if isinstance(state, dict):
+            sd = state.get("model_state_dict") or state.get("model_state") or state.get("model") or state
+            if isinstance(sd, dict) and "embed_tokens.weight" in sd:
+                vocab_size = sd["embed_tokens.weight"].shape[0]
+        cfg = config_from_preset(preset, vocab_size=vocab_size, context_len=context_len)
+
+    model = AiraForCausalLM(cfg)
+
+    if state is not None:
+        if isinstance(state, dict):
+            if "model_state_dict" in state:
+                model.load_state_dict(state["model_state_dict"], strict=False)
+            elif "model_state" in state:
+                model.load_state_dict(state["model_state"], strict=False)
+            elif "model" in state:
+                model.load_state_dict(state["model"], strict=False)
+            else:
+                model.load_state_dict(state, strict=False)
         else:
             model.load_state_dict(state, strict=False)
 
@@ -1120,10 +1145,11 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                 if not ckpt_path:
                     raise ValueError("No checkpoint specified.")
 
-                unload_active_model()
-                from scripts.run_global_ai_benchmarks import run_benchmark_for_checkpoint
-                summary = run_benchmark_for_checkpoint(ckpt_path)
-                unload_active_model()
+                with INFERENCE_LOCK:
+                    unload_active_model()
+                    from scripts.run_global_ai_benchmarks import run_benchmark_for_checkpoint
+                    summary = run_benchmark_for_checkpoint(ckpt_path)
+                    unload_active_model()
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1153,30 +1179,31 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                 if not ckpt_path:
                     raise ValueError("No checkpoint specified.")
 
-                start_t = time.time()
+                with INFERENCE_LOCK:
+                    start_t = time.time()
+                    model = load_single_model_on_demand(ckpt_path)
 
-                model = load_single_model_on_demand(ckpt_path)
+                    encoded = GLOBAL_TOKENIZER.encode(prompt)
+                    input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
 
-                encoded = GLOBAL_TOKENIZER.encode(prompt)
-                input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
+                    with torch.no_grad():
+                        output_ids = model.generate(
+                            input_ids,
+                            max_new_tokens=max_tokens,
+                            temperature=temp,
+                            top_k=top_k,
+                            eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
+                            prefix_cache=GLOBAL_PREFIX_CACHE if not auto_unload else None,
+                        )
 
-                with torch.no_grad():
-                    output_ids = model.generate(
-                        input_ids,
-                        max_new_tokens=max_tokens,
-                        temperature=temp,
-                        top_k=top_k,
-                        eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
-                    )
+                    elapsed = time.time() - start_t
+                    gen_tokens = output_ids.size(1) - len(encoded)
+                    tok_s = gen_tokens / max(elapsed, 1e-4)
+                    response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
 
-                elapsed = time.time() - start_t
-                gen_tokens = output_ids.size(1) - len(encoded)
-                tok_s = gen_tokens / max(elapsed, 1e-4)
-                response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
-
-                freed_mb = 0.0
-                if auto_unload:
-                    freed_mb = unload_active_model()
+                    freed_mb = 0.0
+                    if auto_unload:
+                        freed_mb = unload_active_model()
 
                 result = {
                     "path": ckpt_path,
@@ -1217,44 +1244,46 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                     checkpoints = ["runs/checkpoints/aira_125m_step_1000.pt"]
 
                 results = []
-                encoded = GLOBAL_TOKENIZER.encode(prompt)
-                input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
+                with INFERENCE_LOCK:
+                    encoded = GLOBAL_TOKENIZER.encode(prompt)
+                    input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
 
-                for ckpt_path in checkpoints:
-                    start_t = time.time()
-                    try:
-                        model = load_single_model_on_demand(ckpt_path)
-                        with torch.no_grad():
-                            output_ids = model.generate(
-                                input_ids,
-                                max_new_tokens=max_tokens,
-                                temperature=temp,
-                                top_k=top_k,
-                                eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
-                            )
-                        elapsed = time.time() - start_t
-                        gen_tokens = output_ids.size(1) - len(encoded)
-                        tok_s = gen_tokens / max(elapsed, 1e-4)
-                        response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
+                    for ckpt_path in checkpoints:
+                        start_t = time.time()
+                        try:
+                            model = load_single_model_on_demand(ckpt_path)
+                            with torch.no_grad():
+                                output_ids = model.generate(
+                                    input_ids,
+                                    max_new_tokens=max_tokens,
+                                    temperature=temp,
+                                    top_k=top_k,
+                                    eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
+                                    prefix_cache=GLOBAL_PREFIX_CACHE,
+                                )
+                            elapsed = time.time() - start_t
+                            gen_tokens = output_ids.size(1) - len(encoded)
+                            tok_s = gen_tokens / max(elapsed, 1e-4)
+                            response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
 
-                        freed_mb = unload_active_model()
+                            freed_mb = unload_active_model()
 
-                        results.append({
-                            "path": ckpt_path,
-                            "name": Path(ckpt_path).name,
-                            "response": response_text,
-                            "elapsed_sec": round(elapsed, 2),
-                            "tok_per_sec": round(tok_s, 1),
-                            "tokens_generated": gen_tokens,
-                            "vram_freed_mb": freed_mb,
-                        })
-                    except Exception as err:
-                        unload_active_model()
-                        results.append({
-                            "path": ckpt_path,
-                            "name": Path(ckpt_path).name,
-                            "error": str(err),
-                        })
+                            results.append({
+                                "path": ckpt_path,
+                                "name": Path(ckpt_path).name,
+                                "response": response_text,
+                                "elapsed_sec": round(elapsed, 2),
+                                "tok_per_sec": round(tok_s, 1),
+                                "tokens_generated": gen_tokens,
+                                "vram_freed_mb": freed_mb,
+                            })
+                        except Exception as err:
+                            unload_active_model()
+                            results.append({
+                                "path": ckpt_path,
+                                "name": Path(ckpt_path).name,
+                                "error": str(err),
+                            })
 
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
@@ -1295,7 +1324,7 @@ def main():
     if len(discovered) > 5:
         print(f"  ... and {len(discovered) - 5} more")
 
-    server = HTTPServer(("0.0.0.0", args.port), ArenaRequestHandler)
+    server = ThreadedHTTPServer(("0.0.0.0", args.port), ArenaRequestHandler)
     print(f"\n[SUCCESS] Comparison Arena Web UI running at: http://localhost:{args.port}")
     print(f"Open http://localhost:{args.port} in your browser to select/deselect models and compare outputs 1-by-1!\n")
     sys.stdout.flush()

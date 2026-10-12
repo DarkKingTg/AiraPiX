@@ -159,6 +159,7 @@ datasets:
   - name: openhermes_2_5
     enabled: true
     hf_name: teknium/OpenHermes-2.5
+    revision: refs/convert/parquet
     split: train
     streaming: true
     sample_limit: 30000

@@ -114,13 +114,16 @@ def main() -> None:
     parser.add_argument("--max-steps", type=int, default=1000, help="Total training steps")
     parser.add_argument("--micro-batch-size", type=int, default=2, help="Micro batch size per GPU step")
     parser.add_argument("--grad-accum", type=int, default=16, help="Gradient accumulation steps")
-    parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate")
+    parser.add_argument("--peak-lr", type=float, default=3e-4, help="Peak learning rate for AdamW")
+    parser.add_argument("--muon-lr", type=float, default=0.02, help="Peak learning rate for Muon 2D weight matrices (default: 0.02)")
     parser.add_argument("--port", type=int, default=7860, help="Live Web UI Dashboard port")
     parser.add_argument("--mount-drive", action="store_true", help="Mount Google Drive for persistent checkpoints")
     parser.add_argument("--public-tunnel", action="store_true", default=True, help="Create a public internet URL for the dashboard")
     parser.add_argument("--load-in-4bit", action="store_true", default=True, help="Use 4-bit NF4 quantization streaming")
     parser.add_argument("--load-in-8bit", "--8bit", action="store_true", default=False, help="Use 8-bit quantization streaming")
-    parser.add_argument("--use-qlora", "--qlora", action="store_true", default=True, help="Enable QLoRA fine-tuning")
+    parser.add_argument("--context-len", type=int, default=1024, help="Sequence context length (default: 1024)")
+    parser.add_argument("--force", action="store_true", help="Force preset selection without physical VRAM auto-scaling override")
+    parser.add_argument("--resume", type=str, nargs="?", const="latest", default=None, help="Resume training from a checkpoint")
     parser.add_argument("--colab", action="store_true", default=True, help="Colab mode indicator flag")
     parser.add_argument("--max-checkpoints", type=int, default=8, help="Maximum .pt models to retain on disk (default: 8)")
     args = parser.parse_args()
@@ -188,12 +191,16 @@ def main() -> None:
         batch_size=args.micro_batch_size,
         gradient_accumulation_steps=args.grad_accum,
         peak_lr=args.peak_lr,
+        muon_lr=args.muon_lr,
         save_every=200,
         checkpoint_dir=checkpoint_dir,
         dashboard_port=args.port,
         use_qlora=args.use_qlora,
         load_in_4bit=args.load_in_4bit,
         colab_mode=in_colab,
+        force_preset=args.force,
+        resume_from=args.resume,
+        context_len=args.context_len,
         max_checkpoints=args.max_checkpoints,
     )
 

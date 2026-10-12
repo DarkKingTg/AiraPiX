@@ -18,7 +18,7 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from airapix.model.config import config_from_preset
-from airapix.model.model import AiraForCausalLM
+from airapix.model.model import AiraForCausalLM, AiraPrefixCacheManager
 from airapix.training.tokenizer import TokenizerWrapper
 
 
@@ -193,25 +193,42 @@ class GlobalAIBenchmarkEvaluator:
         elif "tiny" in name_lower:
             preset = "tiny"
             
-        cfg = config_from_preset(preset, vocab_size=12000, context_len=1024)
-        self.model = AiraForCausalLM(cfg)
-        
+        state = None
         if self.model_path.is_file():
             print(f"[Benchmark Engine] Loading checkpoint: {self.model_path.name}...")
             try:
                 state = torch.load(self.model_path, map_location=self.device, weights_only=True)
             except Exception:
                 state = torch.load(self.model_path, map_location=self.device, weights_only=False)
+
+        cfg = None
+        if isinstance(state, dict) and "config" in state and state["config"] is not None:
+            cfg = state["config"]
+        else:
+            vocab_size = self.tokenizer.vocab_size if hasattr(self, "tokenizer") and self.tokenizer is not None else 24000
+            context_len = 2048
+            if isinstance(state, dict):
+                sd = state.get("model_state_dict") or state.get("model_state") or state.get("model") or state
+                if isinstance(sd, dict) and "embed_tokens.weight" in sd:
+                    vocab_size = sd["embed_tokens.weight"].shape[0]
+            cfg = config_from_preset(preset, vocab_size=vocab_size, context_len=context_len)
+
+        self.model = AiraForCausalLM(cfg)
                 
-            if "model_state_dict" in state:
-                self.model.load_state_dict(state["model_state_dict"], strict=False)
-            elif "model" in state:
-                self.model.load_state_dict(state["model"], strict=False)
+        if state is not None:
+            if isinstance(state, dict):
+                if "model_state_dict" in state:
+                    self.model.load_state_dict(state["model_state_dict"], strict=False)
+                elif "model" in state:
+                    self.model.load_state_dict(state["model"], strict=False)
+                else:
+                    self.model.load_state_dict(state, strict=False)
             else:
                 self.model.load_state_dict(state, strict=False)
                 
         self.model.to(self.device)
         self.model.eval()
+        self.prefix_cache = AiraPrefixCacheManager(max_entries=64)
 
     def generate_text(self, prompt: str, max_tokens: int = 128, temp: float = 0.3) -> Tuple[str, float, float]:
         start_t = time.time()
@@ -225,6 +242,7 @@ class GlobalAIBenchmarkEvaluator:
                 temperature=temp,
                 top_k=40,
                 eos_token_id=self.tokenizer.eos_token_id,
+                prefix_cache=self.prefix_cache,
             )
             
         elapsed = time.time() - start_t
