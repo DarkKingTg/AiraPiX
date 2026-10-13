@@ -336,18 +336,48 @@ class AiraForCausalLM(nn.Module):
         eos_token_id: int | None = None,
         use_cache: bool = True,
         prefix_cache: AiraPrefixCacheManager | None = None,
+        repetition_penalty: float = 1.3,
+        bad_words_ids: list[int] | None = None,
     ) -> torch.Tensor:
+        """
+        Args:
+            repetition_penalty: >1.0 penalizes repeated tokens (1.3 recommended to avoid loops).
+            bad_words_ids: List of token IDs to never generate (e.g. [1] to block BOS mid-sequence).
+        """
         self.eval()
         eos_token_id = self.config.eos_token_id if eos_token_id is None else eos_token_id
+        # Always suppress BOS token (id=1) from being generated mid-sequence
+        _suppressed = set(bad_words_ids or [])
+        _suppressed.add(1)  # BOS — must never appear mid-generation
+        _suppressed.discard(eos_token_id)  # EOS must always be generatable
+
+        def _apply_logit_filters(logits: torch.Tensor, generated_so_far: torch.Tensor) -> torch.Tensor:
+            """Applies: bad-word suppression, repetition penalty, top-k, temperature."""
+            # 1. Block bad/special tokens
+            for bad_id in _suppressed:
+                if 0 <= bad_id < logits.size(-1):
+                    logits[:, bad_id] = -float("inf")
+            # 2. Repetition penalty over generated context
+            if repetition_penalty != 1.0 and generated_so_far.numel() > 0:
+                for token_id in generated_so_far[0].unique().tolist():
+                    if 0 <= token_id < logits.size(-1):
+                        if logits[:, token_id] > 0:
+                            logits[:, token_id] /= repetition_penalty
+                        else:
+                            logits[:, token_id] *= repetition_penalty
+            # 3. Temperature scaling
+            logits = logits / max(temperature, 1e-6)
+            # 4. Top-k filter
+            if top_k is not None and top_k > 1:
+                values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
+                logits = torch.where(logits < values[:, [-1]], torch.full_like(logits, -float("inf")), logits)
+            return logits
 
         if not use_cache:
             for _ in range(max_new_tokens):
                 context = input_ids[:, -self.config.context_len :]
                 logits = self(context)["logits"][:, -1, :]
-                logits = logits / max(temperature, 1e-6)
-                if top_k is not None:
-                    values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                    logits = torch.where(logits < values[:, [-1]], torch.full_like(logits, -float("inf")), logits)
+                logits = _apply_logit_filters(logits, input_ids)
                 probs = torch.softmax(logits, dim=-1)
                 next_token = torch.multinomial(probs, num_samples=1)
                 input_ids = torch.cat([input_ids, next_token], dim=1)
@@ -389,10 +419,7 @@ class AiraForCausalLM(nn.Module):
         if prefix_cache is not None and bsz == 1:
             prefix_cache.store_prefix(input_ids[0, :cache.seq_len].tolist(), cache)
 
-        logits = logits / max(temperature, 1e-6)
-        if top_k is not None:
-            values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-            logits = torch.where(logits < values[:, [-1]], torch.full_like(logits, -float("inf")), logits)
+        logits = _apply_logit_filters(logits, input_ids)
         probs = torch.softmax(logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         generated = [next_token]
@@ -403,19 +430,18 @@ class AiraForCausalLM(nn.Module):
         # 2. Decode pass: single token at a time in O(1) time
         curr_pos = prompt_len
         curr_token = next_token
+        all_generated = torch.cat([input_ids, next_token], dim=1)
 
         for _ in range(max_new_tokens - 1):
             if curr_pos >= self.config.context_len:
                 break
             out = self(curr_token, cache=cache, start_pos=curr_pos)
             logits = out["logits"][:, -1, :]
-            logits = logits / max(temperature, 1e-6)
-            if top_k is not None:
-                values, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits = torch.where(logits < values[:, [-1]], torch.full_like(logits, -float("inf")), logits)
+            logits = _apply_logit_filters(logits, all_generated)
             probs = torch.softmax(logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
             generated.append(next_token)
+            all_generated = torch.cat([all_generated, next_token], dim=1)
             curr_pos += 1
             curr_token = next_token
             if bool((next_token == eos_token_id).all()):

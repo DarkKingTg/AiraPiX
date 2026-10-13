@@ -1173,17 +1173,25 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                 prompt = data.get("prompt", "")
                 temp = float(data.get("temp", 0.7))
                 top_k = int(data.get("top_k", 50))
-                max_tokens = int(data.get("max_tokens", 128))
+                max_tokens = int(data.get("max_tokens", 200))
+                rep_penalty = float(data.get("rep_penalty", 1.3))
                 auto_unload = bool(data.get("auto_unload", True))
 
                 if not ckpt_path:
                     raise ValueError("No checkpoint specified.")
 
+                # Apply chat template so model sees correct training format
+                if prompt and not prompt.startswith("User:") and "Assistant:" not in prompt:
+                    formatted_prompt = f"User:\n{prompt.strip()}\n\nAssistant:\n"
+                else:
+                    formatted_prompt = prompt
+
                 with INFERENCE_LOCK:
                     start_t = time.time()
                     model = load_single_model_on_demand(ckpt_path)
 
-                    encoded = GLOBAL_TOKENIZER.encode(prompt)
+                    encoded = GLOBAL_TOKENIZER.encode(formatted_prompt)
+                    input_len = len(encoded)
                     input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
 
                     with torch.no_grad():
@@ -1192,14 +1200,17 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                             max_new_tokens=max_tokens,
                             temperature=temp,
                             top_k=top_k,
+                            repetition_penalty=rep_penalty,
                             eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
                             prefix_cache=GLOBAL_PREFIX_CACHE if not auto_unload else None,
                         )
 
                     elapsed = time.time() - start_t
-                    gen_tokens = output_ids.size(1) - len(encoded)
+                    gen_tokens = output_ids.size(1) - input_len
                     tok_s = gen_tokens / max(elapsed, 1e-4)
-                    response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
+                    # Decode only the newly generated tokens (not the prompt)
+                    new_token_ids = output_ids[0, input_len:].tolist()
+                    response_text = GLOBAL_TOKENIZER.decode(new_token_ids).strip()
 
                     freed_mb = 0.0
                     if auto_unload:
@@ -1237,15 +1248,23 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                 prompt = data.get("prompt", "")
                 temp = float(data.get("temp", 0.7))
                 top_k = int(data.get("top_k", 50))
-                max_tokens = int(data.get("max_tokens", 128))
+                max_tokens = int(data.get("max_tokens", 200))
+                rep_penalty = float(data.get("rep_penalty", 1.3))
                 checkpoints = data.get("checkpoints", [])
 
                 if not checkpoints:
                     checkpoints = ["runs/checkpoints/aira_125m_step_1000.pt"]
 
+                # Apply chat template so model sees correct training format
+                if prompt and not prompt.startswith("User:") and "Assistant:" not in prompt:
+                    formatted_prompt = f"User:\n{prompt.strip()}\n\nAssistant:\n"
+                else:
+                    formatted_prompt = prompt
+
                 results = []
                 with INFERENCE_LOCK:
-                    encoded = GLOBAL_TOKENIZER.encode(prompt)
+                    encoded = GLOBAL_TOKENIZER.encode(formatted_prompt)
+                    input_len = len(encoded)
                     input_ids = torch.tensor([encoded], dtype=torch.long, device=GLOBAL_DEVICE)
 
                     for ckpt_path in checkpoints:
@@ -1258,13 +1277,16 @@ class ArenaRequestHandler(BaseHTTPRequestHandler):
                                     max_new_tokens=max_tokens,
                                     temperature=temp,
                                     top_k=top_k,
+                                    repetition_penalty=rep_penalty,
                                     eos_token_id=GLOBAL_TOKENIZER.eos_token_id,
                                     prefix_cache=GLOBAL_PREFIX_CACHE,
                                 )
                             elapsed = time.time() - start_t
-                            gen_tokens = output_ids.size(1) - len(encoded)
+                            gen_tokens = output_ids.size(1) - input_len
                             tok_s = gen_tokens / max(elapsed, 1e-4)
-                            response_text = GLOBAL_TOKENIZER.decode(output_ids[0].tolist())
+                            # Decode only newly generated tokens (strip prompt)
+                            new_token_ids = output_ids[0, input_len:].tolist()
+                            response_text = GLOBAL_TOKENIZER.decode(new_token_ids).strip()
 
                             freed_mb = unload_active_model()
 

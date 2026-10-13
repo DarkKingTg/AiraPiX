@@ -80,6 +80,7 @@ def generate_response(
     max_new_tokens: int = 128,
     temperature: float = 0.7,
     top_k: int = 50,
+    repetition_penalty: float = 1.3,
     device: torch.device = torch.device("cpu"),
 ) -> str:
     # Format raw prompt into Aira's training chat template if needed
@@ -98,6 +99,7 @@ def generate_response(
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             top_k=top_k,
+            repetition_penalty=repetition_penalty,
             eos_token_id=tokenizer.eos_token_id,
         )
     
@@ -120,9 +122,10 @@ def main() -> None:
     parser.add_argument("--tokenizer", default="airapix/model/tokenizer/tokenizer.json", help="Path to tokenizer.json")
     parser.add_argument("--preset", default="125m", help="Model preset (125m, 90m, 60m, tiny)")
     parser.add_argument("--prompt", type=str, default="", help="Single prompt text to generate")
-    parser.add_argument("--max-tokens", type=int, default=128, help="Maximum new tokens to generate")
-    parser.add_argument("--temp", type=float, default=0.7, help="Sampling temperature")
-    parser.add_argument("--top-k", type=int, default=50, help="Top-k sampling threshold")
+    parser.add_argument("--max-tokens", type=int, default=200, help="Maximum new tokens to generate")
+    parser.add_argument("--temp", type=float, default=0.7, help="Sampling temperature (default: 0.7)")
+    parser.add_argument("--top-k", type=int, default=50, help="Top-k sampling threshold (default: 50)")
+    parser.add_argument("--rep-penalty", type=float, default=1.3, help="Repetition penalty >1.0 discourages loops (default: 1.3)")
     parser.add_argument("--num-samples", "-n", "--samples", type=int, default=1, help="Number of independent completions to generate for the prompt (default: 1)")
     parser.add_argument("--agent", action="store_true", help="Launch interactive Cognitive Agent interface with neurochemicals and Theory of Mind")
     args = parser.parse_args()
@@ -161,6 +164,7 @@ def main() -> None:
                 max_new_tokens=args.max_tokens,
                 temperature=args.temp,
                 top_k=args.top_k,
+                repetition_penalty=args.rep_penalty,
                 device=device,
             )
             print(f"\n--- Output ---\n{output}\n")
@@ -174,6 +178,7 @@ def main() -> None:
                     max_new_tokens=args.max_tokens,
                     temperature=args.temp,
                     top_k=args.top_k,
+                    repetition_penalty=args.rep_penalty,
                     device=device,
                 )
                 print(f"[->] Response {idx}/{num_samples}:\n{output}\n")
@@ -196,6 +201,7 @@ def main() -> None:
                         max_new_tokens=args.max_tokens,
                         temperature=args.temp,
                         top_k=args.top_k,
+                        repetition_penalty=args.rep_penalty,
                         device=device,
                     )
                     header = f"[->] Response {idx}/{num_samples}:\n" if num_samples > 1 else "\nResponse:\n"
